@@ -729,4 +729,93 @@ describe('OrchestrationSessionManager', () => {
     const preserved = await fixture.manager.get({ sessionId: first.session.id });
     expect(preserved).toMatchObject({ name: 'Alpha', context: 'Keep this context', revision: first.session.revision });
   });
+
+  it('archives and restores a Session durably without changing its owner, history, or associations', async () => {
+    const fixture = createFixture();
+    const created = await fixture.manager.create({
+      name: 'Archive me',
+      goal: 'Keep the archive metadata.',
+      context: 'Preserve this context.',
+      decisions: ['Keep the conversation.'],
+    });
+    const pane = paneFixture(fixture, 'archive-pane', { name: 'Archive worktree' });
+    const panePanel = await seedPanel(createPanel('archive-pane-terminal', pane.id, 'Archive terminal'));
+    const associated = await fixture.manager.associate(
+      { sessionId: created.session.id },
+      { paneId: pane.id, panelIds: [panePanel.id] },
+    );
+    await fixture.manager.select({ sessionId: created.session.id });
+    const before = await fixture.manager.get({ sessionId: created.session.id });
+    const ownerId = before.internalSessionId;
+    const orchestrationPanelId = before.panelIds[before.agent];
+    const guideCallsBeforeArchive = vi.mocked(fixture.skillCacheManager.ensurePaneChatGuide).mock.calls.length;
+
+    const archived = await fixture.manager.update(
+      { sessionId: created.session.id },
+      { archived: true, expectedRevision: before.revision },
+    );
+    expect(archived).toMatchObject({
+      id: before.id,
+      archived: true,
+      goal: before.goal,
+      context: before.context,
+      decisions: before.decisions,
+      associations: [expect.objectContaining({ paneId: pane.id, panelIds: [panePanel.id] })],
+    });
+    expect((await fixture.manager.list()).selectedSessionId).not.toBe(created.session.id);
+    expect(fixture.sessions.has(ownerId)).toBe(true);
+    expect(panelManager.getPanel(orchestrationPanelId)).toBeDefined();
+    expect(fixture.sessions.has(pane.id)).toBe(true);
+    expect(panelManager.getPanel(panePanel.id)).toBeDefined();
+    expect(vi.mocked(fixture.skillCacheManager.ensurePaneChatGuide).mock.calls.length).toBe(guideCallsBeforeArchive);
+    await expect(fixture.manager.getView({ sessionId: created.session.id })).rejects.toThrow('restore it before opening');
+
+    const reloaded = new OrchestrationSessionManager(
+      fixture.configManager,
+      fixture.sessionManager,
+      fixture.skillCacheManager,
+      fixture.paneChatManager,
+      undefined,
+      fixture.store,
+    );
+    await reloaded.initialize();
+    const afterReload = await reloaded.list();
+    expect(afterReload.sessions.find(session => session.id === created.session.id)).toMatchObject({
+      archived: true,
+      id: before.id,
+      associations: associated.associations,
+      context: before.context,
+    });
+    expect(afterReload.selectedSessionId).not.toBe(created.session.id);
+
+    const selectedBeforeRestore = afterReload.selectedSessionId;
+    const restored = await reloaded.update({ sessionId: created.session.id }, { archived: false });
+    expect(restored).toMatchObject({ id: before.id, archived: false, associations: associated.associations });
+    expect((await reloaded.list()).selectedSessionId).toBe(selectedBeforeRestore);
+    expect((await reloaded.getView({ sessionId: created.session.id })).session.archived).toBe(false);
+  });
+
+  it('does not unarchive an archived legacy Session during startup migration', async () => {
+    const legacy = {
+      ...orchestrationRecord(LEGACY_ORCHESTRATION_SESSION_ID, 'Pane Chat'),
+      archived: true,
+      internalSessionId: PANE_CHAT_SESSION_ID,
+      panelIds: {
+        claude: getPaneChatPanelId('claude'),
+        codex: getPaneChatPanelId('codex'),
+        cursor: getPaneChatPanelId('cursor'),
+      },
+    } satisfies OrchestrationSessionRecord;
+    const fixture = createFixture('codex', {
+      version: 1,
+      sessions: [legacy],
+      selectedSessionId: legacy.id,
+    });
+
+    await fixture.manager.initialize();
+    const listed = await fixture.manager.list();
+    expect(listed.sessions.find(session => session.id === legacy.id)?.archived).toBe(true);
+    expect(listed.selectedSessionId).toBeUndefined();
+    expect(fixture.paneChatManager.getOrCreate).not.toHaveBeenCalled();
+  });
 });

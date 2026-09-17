@@ -46,7 +46,7 @@ export function setupEventListeners(services: AppServices): void {
     orchestrationSessionManager,
   } = services;
 
-  orchestrationSessionManager?.on('changed', (change: { sessionId: string; kind: string }) => {
+  orchestrationSessionManager?.on('changed', (change: { sessionId: string; kind: string; selectionChanged?: boolean }) => {
     sendRendererEvent('orchestration-sessions:changed', change);
   });
   orchestrationSessionManager?.on('overview-updated', (change: { panelId: string; state: string }) => {

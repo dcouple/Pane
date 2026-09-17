@@ -817,8 +817,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('session:output-available', wrappedCallback);
       return () => ipcRenderer.removeListener('session:output-available', wrappedCallback);
     },
-    onOrchestrationSessionsChanged: (callback: (change: { sessionId: string; kind: string }) => void) => {
-      const wrappedCallback = (_event: Electron.IpcRendererEvent, change: { sessionId: string; kind: string }) => callback(change);
+    onOrchestrationSessionsChanged: (callback: (change: { sessionId: string; kind: string; selectionChanged?: boolean }) => void) => {
+      const wrappedCallback = (_event: Electron.IpcRendererEvent, change: { sessionId: string; kind: string; selectionChanged?: boolean }) => callback(change);
       ipcRenderer.on('orchestration-sessions:changed', wrappedCallback);
       return () => ipcRenderer.removeListener('orchestration-sessions:changed', wrappedCallback);
     },

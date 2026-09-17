@@ -63,6 +63,8 @@ export interface OrchestrationActivity {
 export interface OrchestrationSessionRecord {
   id: string;
   name: string;
+  /** Durable UI archive marker. Older records omit this field and read as active. */
+  archived?: boolean;
   agent: PaneChatAgent;
   /** Hidden detached Pane session that owns the durable terminal conversation. */
   internalSessionId: string;
@@ -164,6 +166,7 @@ export interface OrchestrationSessionCreateInput {
 
 export interface OrchestrationSessionUpdateInput {
   name?: string;
+  archived?: boolean;
   agent?: PaneChatAgent;
   goal?: string;
   context?: string;

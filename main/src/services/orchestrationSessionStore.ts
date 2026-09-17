@@ -71,6 +71,7 @@ const activitySchema: BoundarySchema<OrchestrationActivity> = boundary.object({
 const sessionSchema: BoundarySchema<OrchestrationSessionRecord> = boundary.object({
   id: boundary.nonEmptyString,
   name: boundary.nonEmptyString,
+  archived: boundary.optional(boundary.boolean),
   agent: paneChatAgentSchema,
   internalSessionId: boundary.nonEmptyString,
   panelIds: boundary.object({

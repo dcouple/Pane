@@ -101,6 +101,9 @@ export class OrchestrationSessionManager extends EventEmitter {
     return withLock('orchestration-sessions', async () => {
       await this.ensureInitializedUnlocked();
       const session = this.findSession(this.store.read(), selector);
+      if (session.archived === true) {
+        throw new Error(`Session ${session.name} is archived; restore it before selecting it`);
+      }
       const data = this.store.read();
       const next: OrchestrationSessionStoreData = { ...data, selectedSessionId: session.id };
       this.store.write(next);
@@ -123,6 +126,9 @@ export class OrchestrationSessionManager extends EventEmitter {
     return withLock('orchestration-sessions', async () => {
       await this.ensureInitializedUnlocked();
       const record = this.findSession(this.store.read(), selector);
+      if (record.archived === true) {
+        throw new Error(`Session ${record.name} is archived; restore it before opening it`);
+      }
       const panel = await this.ensurePanelForAgent(record);
       const internalSession = this.sessionManager.getSession(record.internalSessionId);
       if (!internalSession) throw new Error(`Session ${record.id} internal terminal session is missing`);
@@ -158,6 +164,7 @@ export class OrchestrationSessionManager extends EventEmitter {
       const record: OrchestrationSessionRecord = {
         id,
         name,
+        archived: false,
         agent,
         internalSessionId,
         panelIds: {
@@ -223,6 +230,7 @@ export class OrchestrationSessionManager extends EventEmitter {
       const nextRecord: OrchestrationSessionRecord = {
         ...current,
         name,
+        archived: input.archived ?? current.archived === true,
         agent: input.agent ? normalizePaneChatAgent(input.agent) : current.agent,
         goal: input.goal?.trim() ?? current.goal,
         context: input.context?.trim() ?? current.context,
@@ -240,6 +248,9 @@ export class OrchestrationSessionManager extends EventEmitter {
         throw new Error(`A Session named ${nextRecord.name} already exists`);
       }
       this.assertAgentSupported(nextRecord.agent);
+      if (nextRecord.archived === true && nextRecord.agent !== current.agent) {
+        throw new Error(`Session ${current.name} is archived; restore it before changing its agent`);
+      }
       const updateActivity = this.activity(input.report ? 'report' : 'updated', input.report ? `Reported: ${input.report.summary}` : 'Updated Session context.', input.source ?? 'user');
       nextRecord.activity.push(updateActivity);
       if (input.report) {
@@ -251,15 +262,26 @@ export class OrchestrationSessionManager extends EventEmitter {
       }
       trimActivity(nextRecord);
       if (nextRecord.agent !== current.agent) await this.ensurePanelForAgent(nextRecord);
-      const nextData = replaceSession(data, nextRecord);
+      const replaced = replaceSession(data, nextRecord);
+      const isArchiving = current.archived !== true && nextRecord.archived === true;
+      const selectedSessionId = isArchiving && data.selectedSessionId === current.id
+        ? replaced.sessions.find(session => session.id !== current.id && session.archived !== true)?.id
+        : data.selectedSessionId;
+      const nextData: OrchestrationSessionStoreData = {
+        ...replaced,
+        selectedSessionId,
+      };
       this.store.write(nextData);
-      this.emitChanged(nextRecord, input.report ? 'report' : 'updated');
+      this.emitChanged(nextRecord, input.report ? 'report' : 'updated', selectedSessionId !== data.selectedSessionId);
       return clone(nextRecord);
     });
   }
 
   async setAgent(selector: OrchestrationSessionSelector, agent: PaneChatAgent): Promise<OrchestrationSessionView<Session>> {
     const current = await this.get(selector);
+    if (current.archived === true) {
+      throw new Error(`Session ${current.name} is archived; restore it before opening it`);
+    }
     const updated = await this.update({ sessionId: current.id }, { agent, source: 'user' });
     return withLock('orchestration-sessions', async () => {
       const panel = await this.ensurePanelForAgent(updated);
@@ -392,7 +414,8 @@ export class OrchestrationSessionManager extends EventEmitter {
     if (this.initialized) return;
     const data = this.store.read();
     const migrated = await this.migrateLegacySessions(data);
-    const normalized = this.normalizePersistedSessionAgents(migrated);
+    const normalizedArchiveState = this.normalizePersistedSessionArchiveState(migrated);
+    const normalized = this.normalizePersistedSessionAgents(normalizedArchiveState);
     if (normalized !== data) this.store.write(normalized);
     this.reconcilePersistedSessionOwners(normalized);
     this.initialized = true;
@@ -407,6 +430,22 @@ export class OrchestrationSessionManager extends EventEmitter {
       return { ...session, agent };
     });
     return changed ? { ...data, sessions } : data;
+  }
+
+  private normalizePersistedSessionArchiveState(data: OrchestrationSessionStoreData): OrchestrationSessionStoreData {
+    let changed = false;
+    const sessions = data.sessions.map(session => {
+      if (session.archived !== undefined) return session;
+      changed = true;
+      return { ...session, archived: false };
+    });
+    let selectedSessionId = data.selectedSessionId;
+    if (selectedSessionId && sessions.find(session => session.id === selectedSessionId)?.archived === true) {
+      selectedSessionId = sessions.find(session => session.archived !== true)?.id;
+      changed = true;
+    }
+    if (!changed) return data;
+    return { ...data, sessions, selectedSessionId };
   }
 
   private reconcilePersistedSessionOwners(data: OrchestrationSessionStoreData): void {
@@ -483,6 +522,7 @@ export class OrchestrationSessionManager extends EventEmitter {
     return {
       id,
       name: uniqueLegacyAgentName(legacy.name, agent, sessions),
+      archived: false,
       agent,
       internalSessionId: legacy.internalSessionId,
       panelIds: legacyAgentPanelIdsForOwner(id, agent),
@@ -522,6 +562,7 @@ export class OrchestrationSessionManager extends EventEmitter {
     return {
       id: LEGACY_ORCHESTRATION_SESSION_ID,
       name: 'Pane Chat',
+      archived: false,
       agent,
       internalSessionId: state?.session.id ?? PANE_CHAT_SESSION_ID,
       panelIds: {
@@ -776,8 +817,8 @@ export class OrchestrationSessionManager extends EventEmitter {
     return { id: randomUUID(), kind, message: message.slice(0, MAX_ORCHESTRATION_TEXT_LENGTH), at: new Date().toISOString(), source, paneId, panelId };
   }
 
-  private emitChanged(record: OrchestrationSessionRecord, kind: OrchestrationActivity['kind'] | 'selected'): void {
-    this.emit('changed', { sessionId: record.id, kind });
+  private emitChanged(record: OrchestrationSessionRecord, kind: OrchestrationActivity['kind'] | 'selected', selectionChanged = false): void {
+    this.emit('changed', selectionChanged ? { sessionId: record.id, kind, selectionChanged: true } : { sessionId: record.id, kind });
   }
 }
 
@@ -796,6 +837,7 @@ function validateCreateInput(input: OrchestrationSessionCreateInput): void {
 function validateUpdateInput(input: OrchestrationSessionUpdateInput): void {
   validateOptionalText(input.name, 'name');
   if (input.name !== undefined && input.name.trim().length === 0) throw new Error('Session name is required');
+  if (input.archived !== undefined && typeof input.archived !== 'boolean') throw new Error('Session archived must be a boolean');
   validateOptionalText(input.goal, 'goal');
   validateOptionalText(input.context, 'context');
   validateOptionalText(input.nextAction, 'next action');
