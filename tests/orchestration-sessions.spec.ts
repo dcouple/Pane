@@ -52,6 +52,7 @@ type UiSessionFixture = {
   createdAt: string;
   updatedAt: string;
   archived: boolean;
+  isPinned: boolean;
 };
 
 type SessionFixtureOptions = {
@@ -69,6 +70,7 @@ function sessionFixture(
   createdAt: string,
   associations: UiAssociationFixture[] = [],
   archived = false,
+  isPinned = false,
 ): UiSessionFixture {
   const panelIds = {
     claude: `__orchestration_panel_${id}_claude`,
@@ -100,6 +102,7 @@ function sessionFixture(
     createdAt,
     updatedAt: createdAt,
     archived,
+    isPinned,
   };
 }
 
@@ -148,15 +151,37 @@ async function installSessionsFixture(
   await page.addInitScript(({ seed, listDelayMs, getDelayMs, overviewPanes }: { seed: UiSessionFixture[]; listDelayMs: number; getDelayMs: number; overviewPanes: Record<string, UiPaneOverviewFixture[]> }) => {
     type SessionRecord = UiSessionFixture;
     type Selector = { sessionId?: string; name?: string };
-    type Update = Partial<Pick<SessionRecord, 'name' | 'goal' | 'context' | 'decisions' | 'blockers' | 'nextAction' | 'archived'>> & { expectedRevision?: number };
+    type Update = Partial<Pick<SessionRecord, 'name' | 'goal' | 'context' | 'decisions' | 'blockers' | 'nextAction' | 'archived' | 'isPinned'>> & { expectedRevision?: number };
     type Response<Value> = { success: true; data: Value };
 
     const clone = <Value>(value: Value): Value => structuredClone(value);
     const success = <Value>(data: Value): Response<Value> => ({ success: true, data });
     const now = new Date(0).toISOString();
-    let sessions = clone(seed);
-    let selectedSessionId = sessions.find(session => !session.archived)?.id;
-    let nextId = 1;
+    const storageKey = '__pane_test_orchestration_sessions__';
+    type StoredState = {
+      sessions: UiSessionFixture[];
+      selectedSessionId?: string;
+      nextId: number;
+    };
+    const readStoredState = (): StoredState | undefined => {
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) return undefined;
+      try {
+        // SAFETY: Only this fixture writes the test-specific localStorage key, using StoredState below.
+        return JSON.parse(raw) as StoredState;
+      } catch {
+        return undefined;
+      }
+    };
+    const storedState = readStoredState();
+    let sessions = clone(storedState?.sessions ?? seed);
+    let selectedSessionId = storedState?.selectedSessionId && sessions.some(session => session.id === storedState.selectedSessionId)
+      ? storedState.selectedSessionId
+      : sessions.find(session => !session.archived)?.id;
+    let nextId = storedState?.nextId ?? 1;
+    const persistState = () => {
+      window.localStorage.setItem(storageKey, JSON.stringify({ sessions, selectedSessionId, nextId } satisfies StoredState));
+    };
     let currentListDelayMs = listDelayMs;
     let currentGetDelayMs = getDelayMs;
     let selectCalls = 0;
@@ -231,6 +256,7 @@ async function installSessionsFixture(
         const record = find(selector);
         if (record.archived) return { success: false, error: 'Archived Sessions cannot be opened' };
         selectedSessionId = record.id;
+        persistState();
         changed('selected');
         return success({ sessions: clone(sessions), selectedSessionId });
       },
@@ -259,9 +285,11 @@ async function installSessionsFixture(
           createdAt: now,
           updatedAt: now,
           archived: false,
+          isPinned: false,
         };
         sessions = [...sessions, record];
         selectedSessionId = id;
+        persistState();
         changed();
         return success(view(record));
       },
@@ -290,6 +318,7 @@ async function installSessionsFixture(
           blockers: input.blockers ? [...input.blockers] : record.blockers,
           nextAction: input.nextAction?.trim() ?? record.nextAction,
           archived: input.archived ?? record.archived,
+          isPinned: input.isPinned ?? record.isPinned,
           revision: record.revision + 1,
           updatedAt: new Date().toISOString(),
         });
@@ -303,6 +332,7 @@ async function installSessionsFixture(
         if (record.archived && selectedSessionId === record.id) {
           selectedSessionId = sessions.find(candidate => candidate.id !== record.id && !candidate.archived)?.id;
         }
+        persistState();
         changed('updated', previousSelectedSessionId !== selectedSessionId);
         return success(clone(record));
       },
@@ -310,6 +340,7 @@ async function installSessionsFixture(
         const record = find(selector);
         record.agent = agent;
         record.revision += 1;
+        persistState();
         return success(view(record));
       },
       associate: async (selector: Selector, association: { paneId: string; panelIds?: string[] }) => {
@@ -320,6 +351,7 @@ async function installSessionsFixture(
             panelIds: association.panelIds ?? [],
             attachedAt: new Date().toISOString(),
           });
+          persistState();
           changed();
         }
         return success(clone(record));
@@ -329,6 +361,7 @@ async function installSessionsFixture(
         record.associations = paneId
           ? record.associations.filter(association => association.paneId !== paneId)
           : [];
+        persistState();
         changed();
         return success(clone(record));
       },
@@ -768,6 +801,45 @@ test('Sessions group live managed Panes while preserving the focused Pane rows',
   });
   await expect(page.getByTestId('orchestration-session-evolution')).toContainText('2');
   await expect(page.getByRole('button', { name: 'Pinned pane', exact: true })).toBeVisible();
+});
+
+test('Sessions can be pinned, persist across reload, and unpin back to the normal list', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await installSessionsFixture(page, [
+    sessionFixture('alpha', 'Alpha', 'Alpha goal.', 'Alpha context.', '2026-09-16T12:00:00.000Z'),
+    sessionFixture('beta', 'Beta', 'Beta goal.', 'Beta context.', '2026-09-16T12:01:00.000Z'),
+  ]);
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await dismissStartupDialogs(page);
+
+  const alphaRow = page.getByTestId('orchestration-session-alpha');
+  await expect(alphaRow).toBeVisible({ timeout: 10_000 });
+  await alphaRow.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Pin Session', exact: true }).click();
+
+  const pinnedRow = page.getByTestId('orchestration-pinned-session-alpha');
+  await expect(pinnedRow).toBeVisible();
+  const sectionOrder = await page.locator('[data-testid="orchestration-pinned-section-header"], [data-testid="sessions-section-header"]').evaluateAll(nodes => (
+    nodes.map(node => node.getAttribute('data-testid'))
+  ));
+  expect(sectionOrder).toEqual(['orchestration-pinned-section-header', 'sessions-section-header']);
+  await expect.poll(() => page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds this control before the app loads.
+    const mockWindow = window as typeof window & { __paneTestElectronMock: { getOrchestrationRecord: (sessionId: string) => UiSessionFixture | null } };
+    return mockWindow.__paneTestElectronMock.getOrchestrationRecord('alpha')?.isPinned;
+  })).toBe(true);
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await expect(pinnedRow).toBeVisible({ timeout: 10_000 });
+  await pinnedRow.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Unpin Session', exact: true }).click();
+  await expect(pinnedRow).toHaveCount(0);
+  await expect(alphaRow).toBeVisible();
+  await expect.poll(() => page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds this control before the app loads.
+    const mockWindow = window as typeof window & { __paneTestElectronMock: { getOrchestrationRecord: (sessionId: string) => UiSessionFixture | null } };
+    return mockWindow.__paneTestElectronMock.getOrchestrationRecord('alpha')?.isPinned;
+  })).toBe(false);
 });
 
 test('Session rows archive and restore without losing selection or associated Panes', async ({ page }) => {

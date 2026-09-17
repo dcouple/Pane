@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
-import { Archive, ChevronDown, ChevronRight, MessageSquare, Plus, RefreshCw, Terminal } from 'lucide-react';
+import { Archive, ChevronDown, ChevronRight, MessageSquare, Pin, PinOff, Plus, RefreshCw, Terminal } from 'lucide-react';
 import { useNavigationStore } from '../stores/navigationStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { useConfigStore } from '../stores/configStore';
@@ -26,14 +26,21 @@ interface OrchestrationSessionNavProps {
   availablePaneIds?: ReadonlySet<string>;
   /** Renders an associated Pane with the existing Pane row experience. */
   renderPane?: (paneId: string, parentSessionId: string, index: number) => ReactNode | null;
+  /** Existing pinned Pane rows, rendered alongside pinned orchestration Sessions. */
+  pinnedPaneRows?: ReactNode;
+  pinnedSectionExpanded?: boolean;
+  onPinnedSectionExpandedChange?: (expanded: boolean) => void;
 }
 
 interface SessionContextMenuState {
   sessionId: string;
   sessionName: string;
+  isPinned: boolean;
   x: number;
   y: number;
 }
+
+type SessionRowPlacement = 'pinned' | 'sessions';
 
 function statusLabel(session: OrchestrationSessionRecord): string {
   if (session.blockers.length > 0) return 'Blocked';
@@ -71,11 +78,22 @@ function nextSessionName(sessions: readonly OrchestrationSessionRecord[]): strin
   return `New chat ${suffix}`;
 }
 
-export function OrchestrationSessionNav({ compact = false, availablePaneIds, renderPane }: OrchestrationSessionNavProps) {
+export function OrchestrationSessionNav({
+  compact = false,
+  availablePaneIds,
+  renderPane,
+  pinnedPaneRows = null,
+  pinnedSectionExpanded,
+  onPinnedSectionExpandedChange,
+}: OrchestrationSessionNavProps) {
   const sessions = useOrchestrationSessionStore(state => state.sessions);
   const activeSessions = useMemo(
     () => sessions.filter(session => !isArchivedOrchestrationSession(session)),
     [sessions],
+  );
+  const pinnedSessions = useMemo(
+    () => activeSessions.filter(session => session.isPinned === true),
+    [activeSessions],
   );
   const selectedSessionId = useOrchestrationSessionStore(state => state.selectedSessionId);
   const availability = useOrchestrationSessionStore(state => state.availability);
@@ -91,8 +109,11 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
   const [showCreate, setShowCreate] = useState(false);
   const [collapsedSessionIds, setCollapsedSessionIds] = useState<Set<string>>(new Set());
   const [sectionExpanded, setSectionExpanded] = useState(true);
+  const [localPinnedSectionExpanded, setLocalPinnedSectionExpanded] = useState(true);
   const [sessionMenu, setSessionMenu] = useState<SessionContextMenuState | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const isPinnedSectionExpanded = pinnedSectionExpanded ?? localPinnedSectionExpanded;
+  const setPinnedSectionExpanded = onPinnedSectionExpandedChange ?? setLocalPinnedSectionExpanded;
 
   const createSession = useCallback(async (agent: PaneChatAgent, requestedName?: string) => {
     await load();
@@ -140,21 +161,27 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
     });
   }, []);
 
-  const openSessionMenu = useCallback((sessionId: string, sessionName: string, x: number, y: number) => {
-    setSessionMenu({ sessionId, sessionName, x, y });
+  const openSessionMenu = useCallback((session: OrchestrationSessionRecord, x: number, y: number) => {
+    setSessionMenu({
+      sessionId: session.id,
+      sessionName: session.name || 'Pane Chat',
+      isPinned: session.isPinned === true,
+      x,
+      y,
+    });
   }, []);
 
   const handleSessionContextMenu = useCallback((event: ReactMouseEvent<HTMLElement>, session: OrchestrationSessionRecord) => {
     event.preventDefault();
     event.stopPropagation();
-    openSessionMenu(session.id, session.name || 'Pane Chat', event.clientX, event.clientY);
+    openSessionMenu(session, event.clientX, event.clientY);
   }, [openSessionMenu]);
 
   const handleSessionKeyDown = useCallback((event: ReactKeyboardEvent<HTMLElement>, session: OrchestrationSessionRecord) => {
     if (event.key !== 'ContextMenu' && !(event.key === 'F10' && event.shiftKey)) return;
     event.preventDefault();
     const bounds = event.currentTarget.getBoundingClientRect();
-    openSessionMenu(session.id, session.name || 'Pane Chat', bounds.left, bounds.bottom);
+    openSessionMenu(session, bounds.left, bounds.bottom);
   }, [openSessionMenu]);
 
   const archiveSession = useCallback(async () => {
@@ -173,7 +200,78 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
     }
   }, [refresh, sessionMenu, update]);
 
-  if (!availabilityIsVisible(availability)) return null;
+  const pinSession = useCallback(async () => {
+    if (!sessionMenu) return;
+    const { sessionId, isPinned } = sessionMenu;
+    setSessionMenu(null);
+    setActionError(null);
+    try {
+      await update({ sessionId }, { isPinned: !isPinned } satisfies OrchestrationSessionUpdateInput);
+      await refresh();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : 'Failed to update Session pin');
+    }
+  }, [refresh, sessionMenu, update]);
+
+  const sessionsVisible = availabilityIsVisible(availability);
+  const hasPinnedContent = pinnedSessions.length > 0 || Boolean(pinnedPaneRows);
+
+  const renderSessionRow = (session: OrchestrationSessionRecord, placement: SessionRowPlacement): ReactNode => {
+    const visibleAssociations = session.associations.filter(association => (
+      !availablePaneIds || availablePaneIds.has(association.paneId)
+    ));
+    const paneRows = renderPane
+      ? visibleAssociations
+        .map((association, index) => renderPane(association.paneId, session.id, index))
+        .filter((row): row is ReactNode => row !== null && row !== undefined)
+      : [];
+    const expanded = !collapsedSessionIds.has(session.id);
+    const isLegacy = session.id === LEGACY_ORCHESTRATION_SESSION_ID;
+    const label = session.name || 'Pane Chat';
+    const rowId = isLegacy
+      ? placement === 'pinned' ? 'orchestration-pinned-pane-chat' : 'orchestration-pane-chat'
+      : `${placement === 'pinned' ? 'orchestration-pinned-session' : 'orchestration-session'}-${session.id}`;
+    const panesId = `orchestration-session-panes-${placement}-${session.id}`;
+
+    return (
+      <div key={`${placement}-${session.id}`} className="group/orchestration-session">
+        <div className={cn(
+          'flex h-8 w-full items-center text-[13px] transition-colors',
+          activeView === 'pane-chat' && session.id === selectedSessionId ? 'bg-surface-selected text-text-primary' : 'text-text-secondary hover:bg-surface-hover',
+        )}>
+          <button
+            type="button"
+            data-testid={rowId}
+            aria-label={isLegacy ? label : `Open Session ${session.name}`}
+            aria-expanded={paneRows.length > 0 ? expanded : undefined}
+            aria-controls={paneRows.length > 0 ? panesId : undefined}
+            onClick={() => {
+              if (paneRows.length > 0) toggleSessionExpanded(session.id);
+              void openSession(session.id);
+            }}
+            onContextMenu={event => handleSessionContextMenu(event, session)}
+            onKeyDown={event => handleSessionKeyDown(event, session)}
+            className="flex min-w-0 flex-1 items-center gap-2 rounded px-3 py-1 text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive"
+          >
+            <MessageSquare className="h-3.5 w-3.5 flex-shrink-0 text-text-tertiary" />
+            <span className="min-w-0 flex-1 truncate">{label}</span>
+            {paneRows.length > 0 && <span className="pr-1 text-[10px] tabular-nums text-text-muted">{paneRows.length}</span>}
+          </button>
+        </div>
+        {paneRows.length > 0 && (
+          <div
+            id={panesId}
+            className={cn('ml-8 border-l border-border-primary', !expanded && 'hidden')}
+          >
+            {paneRows}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  if (compact && !sessionsVisible) return null;
+  if (!compact && !sessionsVisible && !hasPinnedContent) return null;
 
   if (compact) {
     return (
@@ -229,7 +327,12 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
             <span role="alert" aria-label={actionError} className="flex h-9 w-9 items-center justify-center rounded text-status-error">!</span>
           </Tooltip>
         )}
-        <SessionContextMenu menu={sessionMenu} onClose={() => setSessionMenu(null)} onArchive={() => void archiveSession()} />
+        <SessionContextMenu
+          menu={sessionMenu}
+          onClose={() => setSessionMenu(null)}
+          onArchive={() => void archiveSession()}
+          onPin={() => void pinSession()}
+        />
         <CreateOrchestrationSessionDialog isOpen={showCreate} onClose={() => setShowCreate(false)} onCreate={createSession} />
       </div>
     );
@@ -237,7 +340,35 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
 
   return (
     <>
-      <div className="mt-1" role="group" aria-label="Sessions">
+      {hasPinnedContent && (
+        <div className="mt-1" role="group" aria-label="Pinned">
+          <div data-testid="orchestration-pinned-section-header" className="group/section flex items-center justify-between gap-2 pl-3.5 pr-2 py-0.5">
+            <button
+              type="button"
+              aria-expanded={isPinnedSectionExpanded}
+              aria-controls="orchestration-pinned-list"
+              onClick={() => setPinnedSectionExpanded(!isPinnedSectionExpanded)}
+              className="min-w-0 flex-1 flex items-center justify-between gap-2 py-1 text-left text-[11px] font-semibold uppercase tracking-wide leading-4 text-text-tertiary transition-colors hover:text-text-primary focus-visible:text-text-primary"
+            >
+              <span className="truncate">Pinned</span>
+              <span className="flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-visible/section:opacity-100">
+                {isPinnedSectionExpanded ? (
+                  <ChevronDown className="h-3.5 w-3.5 text-current" />
+                ) : (
+                  <ChevronRight className="h-3.5 w-3.5 text-current" />
+                )}
+              </span>
+            </button>
+          </div>
+          {isPinnedSectionExpanded && (
+            <div id="orchestration-pinned-list" className="mt-0.5">
+              {pinnedSessions.map(session => renderSessionRow(session, 'pinned'))}
+              {pinnedPaneRows}
+            </div>
+          )}
+        </div>
+      )}
+      {sessionsVisible && <div className="mt-1" role="group" aria-label="Sessions">
         <div data-testid="sessions-section-header" className="group/section flex items-center justify-between gap-2 pl-3.5 pr-2 py-0.5">
           <button
             type="button"
@@ -293,58 +424,15 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
         {availability === 'ready' && activeSessions.length === 0 && (
           <p className="px-4 py-1 text-[11px] text-text-muted">Create a Session to keep intent and discussion together.</p>
         )}
-        {activeSessions.map(session => {
-          const visibleAssociations = session.associations.filter(association => (
-            !availablePaneIds || availablePaneIds.has(association.paneId)
-          ));
-          const paneRows = renderPane
-            ? visibleAssociations
-              .map((association, index) => renderPane(association.paneId, session.id, index))
-              .filter((row): row is ReactNode => row !== null && row !== undefined)
-            : [];
-          const expanded = !collapsedSessionIds.has(session.id);
-          const isLegacy = session.id === LEGACY_ORCHESTRATION_SESSION_ID;
-          const label = session.name || 'Pane Chat';
-
-          return (
-            <div key={session.id} className="group/orchestration-session">
-              <div className={cn(
-                'flex h-8 w-full items-center text-[13px] transition-colors',
-                activeView === 'pane-chat' && session.id === selectedSessionId ? 'bg-surface-selected text-text-primary' : 'text-text-secondary hover:bg-surface-hover',
-              )}>
-                <button
-                  type="button"
-                  data-testid={isLegacy ? 'orchestration-pane-chat' : `orchestration-session-${session.id}`}
-                  aria-label={isLegacy ? label : `Open Session ${session.name}`}
-                  aria-expanded={paneRows.length > 0 ? expanded : undefined}
-                  aria-controls={paneRows.length > 0 ? `orchestration-session-panes-${session.id}` : undefined}
-                  onClick={() => {
-                    if (paneRows.length > 0) toggleSessionExpanded(session.id);
-                    void openSession(session.id);
-                  }}
-                  onContextMenu={event => handleSessionContextMenu(event, session)}
-                  onKeyDown={event => handleSessionKeyDown(event, session)}
-                  className="flex min-w-0 flex-1 items-center gap-2 rounded px-3 py-1 text-left focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive"
-                >
-                  <MessageSquare className="h-3.5 w-3.5 flex-shrink-0 text-text-tertiary" />
-                  <span className="min-w-0 flex-1 truncate">{label}</span>
-                  {paneRows.length > 0 && <span className="pr-1 text-[10px] tabular-nums text-text-muted">{paneRows.length}</span>}
-                </button>
-              </div>
-              {paneRows.length > 0 && (
-                <div
-                  id={`orchestration-session-panes-${session.id}`}
-                  className={cn('ml-8 border-l border-border-primary', !expanded && 'hidden')}
-                >
-                  {paneRows}
-                </div>
-              )}
-            </div>
-          );
-        })}
+        {activeSessions.map(session => renderSessionRow(session, 'sessions'))}
         </div>
-      </div>
-      <SessionContextMenu menu={sessionMenu} onClose={() => setSessionMenu(null)} onArchive={() => void archiveSession()} />
+      </div>}
+      <SessionContextMenu
+        menu={sessionMenu}
+        onClose={() => setSessionMenu(null)}
+        onArchive={() => void archiveSession()}
+        onPin={() => void pinSession()}
+      />
       <CreateOrchestrationSessionDialog isOpen={showCreate} onClose={() => setShowCreate(false)} onCreate={createSession} />
     </>
   );
@@ -354,9 +442,10 @@ interface SessionContextMenuProps {
   menu: SessionContextMenuState | null;
   onClose: () => void;
   onArchive: () => void;
+  onPin: () => void;
 }
 
-function SessionContextMenu({ menu, onClose, onArchive }: SessionContextMenuProps) {
+function SessionContextMenu({ menu, onClose, onArchive, onPin }: SessionContextMenuProps) {
   return (
     <TerminalPopover
       visible={menu !== null}
@@ -365,6 +454,12 @@ function SessionContextMenu({ menu, onClose, onArchive }: SessionContextMenuProp
       onClose={onClose}
     >
       <div role="menu" aria-label={`Session actions for ${menu?.sessionName ?? 'Session'}`}>
+        <PopoverButton role="menuitem" onClick={onPin}>
+          <span className="flex items-center gap-2">
+            {menu?.isPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+            {menu?.isPinned ? 'Unpin Session' : 'Pin Session'}
+          </span>
+        </PopoverButton>
         <PopoverButton role="menuitem" variant="danger" onClick={onArchive}>
           <span className="flex items-center gap-2">
             <Archive className="h-4 w-4" />

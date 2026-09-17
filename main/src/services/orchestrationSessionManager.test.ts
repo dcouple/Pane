@@ -745,6 +745,8 @@ describe('OrchestrationSessionManager', () => {
       { paneId: pane.id, panelIds: [panePanel.id] },
     );
     await fixture.manager.select({ sessionId: created.session.id });
+    const pinned = await fixture.manager.update({ sessionId: created.session.id }, { isPinned: true });
+    expect(pinned.isPinned).toBe(true);
     const before = await fixture.manager.get({ sessionId: created.session.id });
     const ownerId = before.internalSessionId;
     const orchestrationPanelId = before.panelIds[before.agent];
@@ -760,6 +762,7 @@ describe('OrchestrationSessionManager', () => {
       goal: before.goal,
       context: before.context,
       decisions: before.decisions,
+      isPinned: true,
       associations: [expect.objectContaining({ paneId: pane.id, panelIds: [panePanel.id] })],
     });
     expect((await fixture.manager.list()).selectedSessionId).not.toBe(created.session.id);
@@ -785,12 +788,13 @@ describe('OrchestrationSessionManager', () => {
       id: before.id,
       associations: associated.associations,
       context: before.context,
+      isPinned: true,
     });
     expect(afterReload.selectedSessionId).not.toBe(created.session.id);
 
     const selectedBeforeRestore = afterReload.selectedSessionId;
     const restored = await reloaded.update({ sessionId: created.session.id }, { archived: false });
-    expect(restored).toMatchObject({ id: before.id, archived: false, associations: associated.associations });
+    expect(restored).toMatchObject({ id: before.id, archived: false, isPinned: true, associations: associated.associations });
     expect((await reloaded.list()).selectedSessionId).toBe(selectedBeforeRestore);
     expect((await reloaded.getView({ sessionId: created.session.id })).session.archived).toBe(false);
   });

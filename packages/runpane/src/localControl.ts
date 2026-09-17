@@ -44,6 +44,7 @@ interface OrchestrationSessionRecord {
   id: string;
   name: string;
   archived?: boolean;
+  isPinned?: boolean;
   agent: RunpaneAgent;
   internalSessionId: string;
   panelIds: Record<RunpaneAgent, string>;
@@ -96,6 +97,7 @@ interface SessionCreatePayload {
 interface SessionUpdatePayload {
   name?: string;
   archived?: boolean;
+  isPinned?: boolean;
   agent?: RunpaneAgent;
   goal?: string;
   context?: string;
@@ -848,6 +850,7 @@ const orchestrationSessionRecordSchema: BoundarySchema<OrchestrationSessionRecor
   id: boundary.nonEmptyString,
   name: boundary.nonEmptyString,
   archived: boundary.optional(boundary.boolean),
+  isPinned: boundary.optional(boundary.boolean),
   agent: agentSchema,
   internalSessionId: boundary.nonEmptyString,
   panelIds: boundary.object({
@@ -1481,6 +1484,7 @@ function parseSessionUpdatePayload(value: JsonValue): SessionUpdatePayload {
   return decodeBoundary(value, boundary.object({
     name: boundary.optional(boundary.string),
     archived: boundary.optional(boundary.boolean),
+    isPinned: boundary.optional(boundary.boolean),
     agent: boundary.optional(boundary.enumeration('codex', 'claude', 'cursor')),
     goal: boundary.optional(boundary.string),
     context: boundary.optional(boundary.string),

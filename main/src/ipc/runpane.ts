@@ -214,6 +214,7 @@ const orchestrationSessionCreateSchema = boundary.object({
 const orchestrationSessionUpdateSchema = boundary.object({
   name: boundary.optional(boundary.string),
   archived: boundary.optional(boundary.boolean),
+  isPinned: boundary.optional(boundary.boolean),
   agent: boundary.optional(boundary.enumeration('claude', 'codex', 'cursor')),
   goal: boundary.optional(boundary.string),
   context: boundary.optional(boundary.string),

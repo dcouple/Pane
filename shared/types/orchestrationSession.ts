@@ -65,6 +65,8 @@ export interface OrchestrationSessionRecord {
   name: string;
   /** Durable UI archive marker. Older records omit this field and read as active. */
   archived?: boolean;
+  /** Durable UI pin marker. Older records omit this field and read as unpinned. */
+  isPinned?: boolean;
   agent: PaneChatAgent;
   /** Hidden detached Pane session that owns the durable terminal conversation. */
   internalSessionId: string;
@@ -167,6 +169,7 @@ export interface OrchestrationSessionCreateInput {
 export interface OrchestrationSessionUpdateInput {
   name?: string;
   archived?: boolean;
+  isPinned?: boolean;
   agent?: PaneChatAgent;
   goal?: string;
   context?: string;

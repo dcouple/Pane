@@ -165,6 +165,7 @@ export class OrchestrationSessionManager extends EventEmitter {
         id,
         name,
         archived: false,
+        isPinned: false,
         agent,
         internalSessionId,
         panelIds: {
@@ -231,6 +232,7 @@ export class OrchestrationSessionManager extends EventEmitter {
         ...current,
         name,
         archived: input.archived ?? current.archived === true,
+        isPinned: input.isPinned ?? current.isPinned === true,
         agent: input.agent ? normalizePaneChatAgent(input.agent) : current.agent,
         goal: input.goal?.trim() ?? current.goal,
         context: input.context?.trim() ?? current.context,
@@ -415,7 +417,8 @@ export class OrchestrationSessionManager extends EventEmitter {
     const data = this.store.read();
     const migrated = await this.migrateLegacySessions(data);
     const normalizedArchiveState = this.normalizePersistedSessionArchiveState(migrated);
-    const normalized = this.normalizePersistedSessionAgents(normalizedArchiveState);
+    const normalizedPinState = this.normalizePersistedSessionPinState(normalizedArchiveState);
+    const normalized = this.normalizePersistedSessionAgents(normalizedPinState);
     if (normalized !== data) this.store.write(normalized);
     this.reconcilePersistedSessionOwners(normalized);
     this.initialized = true;
@@ -446,6 +449,16 @@ export class OrchestrationSessionManager extends EventEmitter {
     }
     if (!changed) return data;
     return { ...data, sessions, selectedSessionId };
+  }
+
+  private normalizePersistedSessionPinState(data: OrchestrationSessionStoreData): OrchestrationSessionStoreData {
+    let changed = false;
+    const sessions = data.sessions.map(session => {
+      if (session.isPinned !== undefined) return session;
+      changed = true;
+      return { ...session, isPinned: false };
+    });
+    return changed ? { ...data, sessions } : data;
   }
 
   private reconcilePersistedSessionOwners(data: OrchestrationSessionStoreData): void {
@@ -523,6 +536,7 @@ export class OrchestrationSessionManager extends EventEmitter {
       id,
       name: uniqueLegacyAgentName(legacy.name, agent, sessions),
       archived: legacy.archived === true,
+      isPinned: legacy.isPinned === true,
       agent,
       internalSessionId: legacy.internalSessionId,
       panelIds: legacyAgentPanelIdsForOwner(id, agent),
@@ -563,6 +577,7 @@ export class OrchestrationSessionManager extends EventEmitter {
       id: LEGACY_ORCHESTRATION_SESSION_ID,
       name: 'Pane Chat',
       archived: false,
+      isPinned: false,
       agent,
       internalSessionId: state?.session.id ?? PANE_CHAT_SESSION_ID,
       panelIds: {
@@ -838,6 +853,7 @@ function validateUpdateInput(input: OrchestrationSessionUpdateInput): void {
   validateOptionalText(input.name, 'name');
   if (input.name !== undefined && input.name.trim().length === 0) throw new Error('Session name is required');
   if (input.archived !== undefined) decodeBoundary(input.archived, boundary.boolean);
+  if (input.isPinned !== undefined) decodeBoundary(input.isPinned, boundary.boolean);
   validateOptionalText(input.goal, 'goal');
   validateOptionalText(input.context, 'context');
   validateOptionalText(input.nextAction, 'next action');

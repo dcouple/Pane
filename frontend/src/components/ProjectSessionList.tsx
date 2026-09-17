@@ -332,6 +332,24 @@ export function ProjectSessionList({
     );
   }, [activeSessionId, globalSessionIndex, handleArchiveSession, handleManagedPaneClick, handleTogglePinnedSession, paneById, sidebarPaneRowLayout]);
 
+  const pinnedPaneRows = pinnedSessions.length > 0 ? (
+    <div className="mt-0.5">
+      {pinnedSessions.map(({ session, label }) => (
+        <SessionRow
+          key={`pinned-${session.id}`}
+          session={session}
+          isActive={session.id === activeSessionId}
+          globalIndex={-1}
+          displayName={label}
+          onClick={() => handleSessionClick(session.id, 'pinned')}
+          onArchive={() => handleArchiveSession(session.id)}
+          onTogglePinned={() => handleTogglePinnedSession(session.id)}
+          rowLayout={sidebarPaneRowLayout}
+        />
+      ))}
+    </div>
+  ) : null;
+
   return (
     <>
       <div className="flex flex-col py-1.5">
@@ -412,45 +430,10 @@ export function ProjectSessionList({
         <OrchestrationSessionNav
           availablePaneIds={availablePaneIds}
           renderPane={renderManagedPane}
+          pinnedPaneRows={pinnedPaneRows}
+          pinnedSectionExpanded={pinnedSectionExpanded}
+          onPinnedSectionExpandedChange={onPinnedSectionExpandedChange}
         />
-
-        {pinnedSessions.length > 0 && (
-          <>
-            <div className={SIDEBAR_SECTION_ROW}>
-              <button
-                type="button"
-                onClick={() => onPinnedSectionExpandedChange(!pinnedSectionExpanded)}
-                className={SIDEBAR_SECTION_TOGGLE}
-              >
-                <span className={SIDEBAR_SECTION_LABEL}>Pinned</span>
-                <span className="flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-visible/section:opacity-100">
-                  {pinnedSectionExpanded ? (
-                    <ChevronDown className="h-3.5 w-3.5 text-current" />
-                  ) : (
-                    <ChevronRight className="h-3.5 w-3.5 text-current" />
-                  )}
-                </span>
-              </button>
-            </div>
-            {pinnedSectionExpanded && (
-              <div className="mt-0.5">
-                {pinnedSessions.map(({ session, label }) => (
-                  <SessionRow
-                    key={`pinned-${session.id}`}
-                    session={session}
-                    isActive={session.id === activeSessionId}
-                    globalIndex={-1}
-                    displayName={label}
-                    onClick={() => handleSessionClick(session.id, 'pinned')}
-                    onArchive={() => handleArchiveSession(session.id)}
-                    onTogglePinned={() => handleTogglePinnedSession(session.id)}
-                    rowLayout={sidebarPaneRowLayout}
-                  />
-                ))}
-              </div>
-            )}
-          </>
-        )}
 
         <div className={SIDEBAR_SECTION_ROW}>
           <button

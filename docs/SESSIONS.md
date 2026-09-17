@@ -28,6 +28,10 @@ agent does not replace the delegated workflow's model requirements.
 
 ## Session sidebar and archive
 
+Pinned is the first sidebar category and can contain both Session chats and
+Panes. Right-click a Session to pin or unpin it. The pin preference survives
+restarts; an archived Session stays out of Pinned until it is restored.
+
 Click a Session row to open its chat and expand or collapse its associated
 Panes. Child Pane rows are indented beyond the Session chat icon and keep the
 ordinary Pane actions.
