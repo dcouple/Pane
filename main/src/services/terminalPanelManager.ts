@@ -14,6 +14,7 @@ import { ShellDetector } from '../utils/shellDetector';
 import type { AnalyticsManager } from './analyticsManager';
 import { getWSLShellSpawn, buildWSLENV, WSLContext } from '../utils/wslUtils';
 import { getGitAttributionEnv } from '../utils/attribution';
+import { inheritedProcessEnv } from '../utils/inheritedProcessEnv';
 import {
   type FlowControlRecord,
   createFlowControlRecord,
@@ -938,17 +939,10 @@ export class TerminalPanelManager extends EventEmitter {
     const spawnCols = initialDimensions?.cols || 80;
     const spawnRows = initialDimensions?.rows || 30;
 
-    // `process.env` is `NodeJS.ProcessEnv` which allows `undefined` values; the
-    // ptyHost RPC DTO requires `Record<string, string>`. Drop undefined keys so
-    // both the legacy `pty.spawn` path and the ptyHost path see the same shape.
-    const baseEnv: Record<string, string> = {};
-    for (const [key, value] of Object.entries(process.env)) {
-      if (value !== undefined) {
-        baseEnv[key] = value;
-      }
-    }
+    // The ptyHost RPC DTO requires `Record<string, string>`, so both the legacy
+    // `pty.spawn` path and the ptyHost path get the same undefined-free shape.
     const baseSpawnEnv = {
-      ...baseEnv,
+      ...inheritedProcessEnv(),
       ...getGitAttributionEnv(getRuntimeConfigManager().getConfig()),
       PATH: enhancedPath,
       TERM: 'xterm-256color',
