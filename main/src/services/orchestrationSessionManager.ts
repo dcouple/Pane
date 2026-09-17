@@ -837,7 +837,7 @@ function validateCreateInput(input: OrchestrationSessionCreateInput): void {
 function validateUpdateInput(input: OrchestrationSessionUpdateInput): void {
   validateOptionalText(input.name, 'name');
   if (input.name !== undefined && input.name.trim().length === 0) throw new Error('Session name is required');
-  if (input.archived !== undefined && typeof input.archived !== 'boolean') throw new Error('Session archived must be a boolean');
+  if (input.archived !== undefined) decodeBoundary(input.archived, boundary.boolean);
   validateOptionalText(input.goal, 'goal');
   validateOptionalText(input.context, 'context');
   validateOptionalText(input.nextAction, 'next action');
