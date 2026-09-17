@@ -199,8 +199,13 @@ export class OrchestrationSessionManager extends EventEmitter {
         // an unrecoverable duplicate-name orphan.
         const ownerExists = this.sessionManager.getSession(record.internalSessionId) !== undefined;
         const panelExists = panelManager.getPanel(record.panelIds[record.agent]) !== undefined;
-        if (!ownerExists && !panelExists) this.store.write(data);
-        throw error;
+        if (!ownerExists && !panelExists) {
+          this.store.write(data);
+          throw error;
+        }
+        this.emitChanged(record, 'created');
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(`Session “${record.name}” was saved but could not be opened: ${detail}. Reopen it from the Sessions list.`, { cause: error });
       }
     });
   }

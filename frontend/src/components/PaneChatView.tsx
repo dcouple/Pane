@@ -251,6 +251,7 @@ function NamedSessionWorkspace({ view, error, statusAnnouncement, onOverviewUpda
   const [overviewError, setOverviewError] = useState<string | null>(null);
   const [showOverview, setShowOverview] = useState(false);
   const overviewRequestId = useRef(0);
+  const overviewRefreshTimer = useRef<number | null>(null);
   const isMounted = useRef(false);
 
   const refreshOverview = useCallback(async () => {
@@ -273,11 +274,23 @@ function NamedSessionWorkspace({ view, error, statusAnnouncement, onOverviewUpda
     }
   }, [view.session.id]);
 
+  const scheduleOverviewRefresh = useCallback(() => {
+    if (!isMounted.current || overviewRefreshTimer.current !== null) return;
+    overviewRefreshTimer.current = window.setTimeout(() => {
+      overviewRefreshTimer.current = null;
+      if (isMounted.current) void refreshOverview();
+    }, 50);
+  }, [refreshOverview]);
+
   useEffect(() => {
     isMounted.current = true;
     return () => {
       isMounted.current = false;
       overviewRequestId.current += 1;
+      if (overviewRefreshTimer.current !== null) {
+        window.clearTimeout(overviewRefreshTimer.current);
+        overviewRefreshTimer.current = null;
+      }
     };
   }, []);
 
@@ -286,10 +299,58 @@ function NamedSessionWorkspace({ view, error, statusAnnouncement, onOverviewUpda
   }, [refreshOverview]);
 
   useEffect(() => {
+    const events = window.electronAPI?.events;
+    if (!events) return;
+
+    const currentAssociations = () => {
+      const state = useOrchestrationSessionStore.getState();
+      if (state.selectedSessionId !== view.session.id) return [];
+      return state.sessions.find(session => session.id === state.selectedSessionId)?.associations ?? [];
+    };
+    const isAssociatedPane = (paneId: string) => currentAssociations().some(association => association.paneId === paneId);
+    const isAssociatedPanel = (panelId: string, paneId: string) => currentAssociations().some(association => (
+      association.paneId === paneId
+      && (association.panelIds.length === 0 || association.panelIds.includes(panelId))
+    ));
+
+    const unsubscribeSessionUpdated = events.onSessionUpdated(session => {
+      if (isAssociatedPane(session.id)) scheduleOverviewRefresh();
+    });
+    const unsubscribeSessionDeleted = events.onSessionDeleted(session => {
+      if (isAssociatedPane(session.id)) scheduleOverviewRefresh();
+    });
+    const unsubscribePanelCreated = events.onPanelCreated(panel => {
+      if (isAssociatedPanel(panel.id, panel.sessionId)) scheduleOverviewRefresh();
+    });
+    const unsubscribePanelUpdated = events.onPanelUpdated(panel => {
+      if (isAssociatedPanel(panel.id, panel.sessionId)) scheduleOverviewRefresh();
+    });
+    const unsubscribePanelDeleted = events.onPanelDeleted(({ panelId, sessionId }) => {
+      if (isAssociatedPanel(panelId, sessionId)) scheduleOverviewRefresh();
+    });
+    const unsubscribeGitStatusUpdated = events.onGitStatusUpdated(({ sessionId }) => {
+      if (isAssociatedPane(sessionId)) scheduleOverviewRefresh();
+    });
+    const unsubscribeGitStatusUpdatedBatch = events.onGitStatusUpdatedBatch?.(updates => {
+      if (updates.some(({ sessionId }) => isAssociatedPane(sessionId))) scheduleOverviewRefresh();
+    });
+
+    return () => {
+      unsubscribeSessionUpdated();
+      unsubscribeSessionDeleted();
+      unsubscribePanelCreated();
+      unsubscribePanelUpdated();
+      unsubscribePanelDeleted();
+      unsubscribeGitStatusUpdated();
+      unsubscribeGitStatusUpdatedBatch?.();
+    };
+  }, [scheduleOverviewRefresh, view.session.id]);
+
+  useEffect(() => {
     const handleRefresh = (event: Event) => {
       const sessionId = event instanceof CustomEvent ? event.detail?.sessionId : undefined;
       if (sessionId && sessionId !== view.session.id) return;
-      void refreshOverview();
+      scheduleOverviewRefresh();
     };
     window.addEventListener('orchestration-sessions-changed', handleRefresh);
     window.addEventListener('orchestration-sessions-overview-updated', handleRefresh);
@@ -297,7 +358,7 @@ function NamedSessionWorkspace({ view, error, statusAnnouncement, onOverviewUpda
       window.removeEventListener('orchestration-sessions-changed', handleRefresh);
       window.removeEventListener('orchestration-sessions-overview-updated', handleRefresh);
     };
-  }, [refreshOverview, view.session.id]);
+  }, [scheduleOverviewRefresh, view.session.id]);
 
   return (
     <div className="pane-chat-shell flex-1 flex min-h-0 flex-col overflow-hidden bg-bg-primary">

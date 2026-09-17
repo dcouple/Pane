@@ -21,6 +21,10 @@ type UiPaneOverviewFixture = {
     initialized: boolean;
     missing?: boolean;
   }>;
+  git?: {
+    state: string;
+    hasUncommittedChanges?: boolean;
+  };
 };
 
 type UiSessionFixture = {
@@ -151,6 +155,7 @@ async function installSessionsFixture(
     let nextId = 1;
     let currentListDelayMs = listDelayMs;
     let selectCalls = 0;
+    let overviewCalls = 0;
     const viewRequests: Array<{ sessionId: string; agent: SessionRecord['agent']; panelId: string }> = [];
 
     const find = (selector: Selector): SessionRecord => {
@@ -303,6 +308,7 @@ async function installSessionsFixture(
       },
       overview: async (selector: Selector) => {
         const record = find(selector);
+        overviewCalls += 1;
         return success({ session: clone(record), status: 'unassociated', panes: clone(overviewPanes[record.id] ?? []), activity: clone(record.activity), refreshedAt: new Date().toISOString() });
       },
     };
@@ -312,6 +318,10 @@ async function installSessionsFixture(
       setOrchestrationListDelay: (delayMs: number) => { currentListDelayMs = delayMs; },
       getOrchestrationSelectCalls: () => selectCalls,
       getOrchestrationViewRequests: () => clone(viewRequests),
+      getOrchestrationOverviewCalls: () => overviewCalls,
+      setOrchestrationOverviewPanes: (sessionId: string, panes: UiPaneOverviewFixture[]) => {
+        overviewPanes[sessionId] = clone(panes);
+      },
       setExternalOrchestrationAgent: (agent: SessionRecord['agent'], sessionId = selectedSessionId) => {
         if (!sessionId) throw new Error('No Session is selected');
         const record = find({ sessionId });
@@ -714,4 +724,132 @@ test('Sessions group live managed Panes while preserving the focused Pane rows',
   });
   await expect(page.getByTestId('orchestration-session-evolution')).toContainText('2');
   await expect(page.getByRole('button', { name: 'Pinned pane', exact: true })).toBeVisible();
+});
+
+test('Session overview refreshes for associated Pane activity without reacting to unrelated events', async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await installSessionsFixture(page, [
+    sessionFixture(
+      'tracked-session',
+      'Tracked Session',
+      'Track the associated Pane.',
+      'Tracked context.',
+      '2026-09-16T12:00:00.000Z',
+      [{ paneId: 'tracked-pane', panelIds: ['tracked-panel'], attachedAt: '2026-09-16T12:00:00.000Z' }],
+    ),
+  ], [], {
+    overviewPanes: {
+      'tracked-session': [{
+        paneId: 'tracked-pane',
+        name: 'Tracked Pane',
+        branch: 'feature/tracked',
+        archived: false,
+        missing: false,
+        panels: [{ panelId: 'tracked-panel', title: 'Tracked terminal', state: 'idle', initialized: true }],
+      }],
+    },
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
+  await dismissStartupDialogs(page);
+
+  await page.getByTestId('sessions-nav').click();
+  await expect(page.getByRole('heading', { name: 'Tracked Session', exact: true })).toBeVisible({ timeout: 10_000 });
+  await page.getByRole('button', { name: 'Show overview', exact: true }).click();
+  const overview = page.getByRole('complementary', { name: 'Session overview', exact: true });
+  await expect(overview.getByText('Tracked Pane', { exact: true })).toBeVisible();
+  await expect(overview.getByText('feature/tracked', { exact: true })).toBeVisible();
+  await expect(overview.getByText('Tracked terminal', { exact: true })).toBeVisible();
+  const initialOverviewCalls = await page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & { __paneTestElectronMock: { getOrchestrationOverviewCalls: () => number } };
+    return mockWindow.__paneTestElectronMock.getOrchestrationOverviewCalls();
+  });
+
+  await page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & {
+      __paneTestElectronMock: {
+        setOrchestrationOverviewPanes: (sessionId: string, panes: UiPaneOverviewFixture[]) => void;
+        emitSessionUpdated: (session: { id: string }) => void;
+        emitSessionDeleted: (sessionId: string) => void;
+        emitPanelCreated: (panel: { id: string; sessionId: string; title: string }) => void;
+        emitPanelUpdated: (panel: { id: string; sessionId: string; title: string }) => void;
+        emitPanelDeleted: (panelId: string, sessionId: string) => void;
+        emitGitStatusUpdated: (sessionId: string, gitStatus: { state: string }) => void;
+        emitGitStatusUpdatedBatch: (updates: Array<{ sessionId: string; status: { state: string } }>) => void;
+      };
+    };
+    mockWindow.__paneTestElectronMock.setOrchestrationOverviewPanes('tracked-session', [{
+      paneId: 'tracked-pane',
+      name: 'Renamed Tracked Pane',
+      branch: 'feature/renamed',
+      archived: true,
+      missing: false,
+      panels: [{ panelId: 'tracked-panel', title: 'Renamed terminal', state: 'working', initialized: true }],
+      git: { state: 'modified', hasUncommittedChanges: true },
+    }]);
+    mockWindow.__paneTestElectronMock.emitSessionUpdated({ id: 'tracked-pane' });
+    mockWindow.__paneTestElectronMock.emitSessionDeleted('tracked-pane');
+    mockWindow.__paneTestElectronMock.emitPanelCreated({ id: 'tracked-panel', sessionId: 'tracked-pane', title: 'Renamed terminal' });
+    mockWindow.__paneTestElectronMock.emitPanelUpdated({ id: 'tracked-panel', sessionId: 'tracked-pane', title: 'Renamed terminal' });
+    mockWindow.__paneTestElectronMock.emitPanelDeleted('tracked-panel', 'tracked-pane');
+    mockWindow.__paneTestElectronMock.emitGitStatusUpdated('tracked-pane', { state: 'modified' });
+    mockWindow.__paneTestElectronMock.emitGitStatusUpdatedBatch([
+      { sessionId: 'unrelated-pane', status: { state: 'clean' } },
+      { sessionId: 'tracked-pane', status: { state: 'modified' } },
+    ]);
+  });
+  await expect.poll(() => page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & { __paneTestElectronMock: { getOrchestrationOverviewCalls: () => number } };
+    return mockWindow.__paneTestElectronMock.getOrchestrationOverviewCalls();
+  })).toBe(initialOverviewCalls + 1);
+  await expect(overview.getByText('Renamed Tracked Pane', { exact: true })).toBeVisible();
+  await expect(overview.getByText('feature/renamed · archived', { exact: true })).toBeVisible();
+  await expect(overview.getByText('Renamed terminal', { exact: true })).toBeVisible();
+  await expect(overview.getByText('Uncommitted changes', { exact: true })).toBeVisible();
+
+  const callsAfterAssociatedEvents = await page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & { __paneTestElectronMock: { getOrchestrationOverviewCalls: () => number } };
+    return mockWindow.__paneTestElectronMock.getOrchestrationOverviewCalls();
+  });
+  await page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & {
+      __paneTestElectronMock: {
+        setOrchestrationOverviewPanes: (sessionId: string, panes: UiPaneOverviewFixture[]) => void;
+        emitSessionUpdated: (session: { id: string }) => void;
+        emitSessionDeleted: (sessionId: string) => void;
+        emitPanelCreated: (panel: { id: string; sessionId: string; title: string }) => void;
+        emitPanelUpdated: (panel: { id: string; sessionId: string; title: string }) => void;
+        emitPanelDeleted: (panelId: string, sessionId: string) => void;
+        emitGitStatusUpdated: (sessionId: string, gitStatus: { state: string }) => void;
+        emitGitStatusUpdatedBatch: (updates: Array<{ sessionId: string; status: { state: string } }>) => void;
+      };
+    };
+    mockWindow.__paneTestElectronMock.setOrchestrationOverviewPanes('tracked-session', [{
+      paneId: 'tracked-pane',
+      name: 'Should stay visible',
+      branch: 'feature/unexpected',
+      archived: false,
+      missing: false,
+      panels: [{ panelId: 'tracked-panel', title: 'Unexpected terminal', state: 'idle', initialized: true }],
+    }]);
+    mockWindow.__paneTestElectronMock.emitSessionUpdated({ id: 'unrelated-pane' });
+    mockWindow.__paneTestElectronMock.emitSessionDeleted('unrelated-pane');
+    mockWindow.__paneTestElectronMock.emitPanelCreated({ id: 'unrelated-panel', sessionId: 'unrelated-pane', title: 'Unrelated terminal' });
+    mockWindow.__paneTestElectronMock.emitPanelUpdated({ id: 'unrelated-panel', sessionId: 'unrelated-pane', title: 'Unrelated terminal' });
+    mockWindow.__paneTestElectronMock.emitPanelDeleted('unrelated-panel', 'unrelated-pane');
+    mockWindow.__paneTestElectronMock.emitGitStatusUpdated('unrelated-pane', { state: 'clean' });
+    mockWindow.__paneTestElectronMock.emitGitStatusUpdatedBatch([{ sessionId: 'unrelated-pane', status: { state: 'clean' } }]);
+  });
+  await page.waitForTimeout(150);
+  expect(await page.evaluate(() => {
+    // SAFETY: installSessionsFixture adds these controls before the app loads.
+    const mockWindow = window as typeof window & { __paneTestElectronMock: { getOrchestrationOverviewCalls: () => number } };
+    return mockWindow.__paneTestElectronMock.getOrchestrationOverviewCalls();
+  })).toBe(callsAfterAssociatedEvents);
+  await expect(overview.getByText('Renamed Tracked Pane', { exact: true })).toBeVisible();
+  await expect(overview.getByText('Should stay visible', { exact: true })).toHaveCount(0);
 });

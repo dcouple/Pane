@@ -316,7 +316,7 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
                 </button>
               </div>
               {expanded && paneRows.length > 0 && (
-                <div id={`orchestration-session-panes-${session.id}`} className="ml-4 border-l border-border-primary">
+                <div id={`orchestration-session-panes-${session.id}`} className="ml-8 border-l border-border-primary">
                   {paneRows}
                 </div>
               )}

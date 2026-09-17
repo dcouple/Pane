@@ -529,6 +529,8 @@ describe('OrchestrationSessionManager', () => {
   it('rolls back metadata when hidden owner provisioning fails before publication', async () => {
     const fixture = createFixture();
     await fixture.manager.initialize();
+    const changedEvents: Array<{ sessionId: string; kind: string }> = [];
+    fixture.manager.on('changed', event => changedEvents.push(event));
     vi.mocked(fixture.sessionManager.createSessionWithId).mockImplementationOnce(() => {
       throw new Error('hidden owner provisioning failed');
     });
@@ -537,6 +539,7 @@ describe('OrchestrationSessionManager', () => {
     const afterFailure = await fixture.manager.list();
     expect(afterFailure.sessions.some(session => session.name === 'Recoverable Session')).toBe(false);
     expect(afterFailure.selectedSessionId).toBe(LEGACY_ORCHESTRATION_SESSION_ID);
+    expect(changedEvents).toEqual([]);
 
     const retried = await fixture.manager.create({ name: 'Recoverable Session' });
     expect(retried.session.name).toBe('Recoverable Session');
@@ -545,12 +548,15 @@ describe('OrchestrationSessionManager', () => {
   it('retains durable metadata when later provisioning fails with a published owner', async () => {
     const fixture = createFixture();
     await fixture.manager.initialize();
+    const changedEvents: Array<{ sessionId: string; kind: string }> = [];
+    fixture.manager.on('changed', event => changedEvents.push(event));
     vi.mocked(fixture.skillCacheManager.ensurePaneChatGuide)
       .mockResolvedValueOnce('/tmp/issue-653/guide.md')
       .mockRejectedValueOnce(new Error('guide publication failed'));
 
-    await expect(fixture.manager.create({ name: 'Published Session' })).rejects.toThrow('guide publication failed');
+    await expect(fixture.manager.create({ name: 'Published Session' })).rejects.toThrow('Reopen it from the Sessions list');
     const persisted = await fixture.manager.get({ name: 'Published Session' });
+    expect(changedEvents).toEqual([{ sessionId: persisted.id, kind: 'created' }]);
     expect(fixture.sessions.has(persisted.internalSessionId)).toBe(true);
     expect(panelManager.getPanel(persisted.panelIds[persisted.agent])).toBeDefined();
     const resumed = await fixture.manager.getView({ sessionId: persisted.id });

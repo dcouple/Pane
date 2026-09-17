@@ -336,6 +336,9 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         if (prop === 'onGitStatusUpdated') {
           return (callback: MockEventCallback) => subscribe('git-status-updated', callback);
         }
+        if (prop === 'onGitStatusUpdatedBatch') {
+          return (callback: MockEventCallback) => subscribe('git-status-updated-batch', callback);
+        }
         if (prop === 'onTerminalOutput') {
           return (callback: MockEventCallback) => subscribe('terminal-output', callback);
         }
@@ -351,11 +354,20 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         if (prop === 'onSessionUpdated') {
           return (callback: MockEventCallback) => subscribe('session:updated', callback);
         }
+        if (prop === 'onSessionDeleted') {
+          return (callback: MockEventCallback) => subscribe('session:deleted', callback);
+        }
         if (prop === 'onSessionCreationFailed') {
           return (callback: MockEventCallback) => subscribe('session:creation-failed', callback);
         }
         if (prop === 'onPanelCreated') {
           return (callback: MockEventCallback) => subscribe('panel:created', callback);
+        }
+        if (prop === 'onPanelUpdated') {
+          return (callback: MockEventCallback) => subscribe('panel:updated', callback);
+        }
+        if (prop === 'onPanelDeleted') {
+          return (callback: MockEventCallback) => subscribe('panel:deleted', callback);
         }
         return () => unsubscribe;
       },
@@ -1142,11 +1154,23 @@ export async function installElectronApiMock(page: Page, options: ElectronApiMoc
         emitGitStatusUpdated(sessionId: string, gitStatus: JsonObject) {
           emit('git-status-updated', { sessionId, gitStatus: clone(gitStatus) });
         },
+        emitGitStatusUpdatedBatch(updates: Array<{ sessionId: string; status: JsonObject }>) {
+          emit('git-status-updated-batch', clone(updates));
+        },
         emitTerminalOutput(sessionId: string, data: string) {
           emit('terminal-output', { sessionId, type: 'stdout', data });
         },
         emitSessionUpdated(session: JsonObject) {
           emit('session:updated', clone(session));
+        },
+        emitSessionDeleted(sessionId: string) {
+          emit('session:deleted', { id: sessionId });
+        },
+        emitPanelUpdated(panel: JsonObject) {
+          emit('panel:updated', clone(panel));
+        },
+        emitPanelDeleted(panelId: string, sessionId: string) {
+          emit('panel:deleted', { panelId, sessionId });
         },
         getSessionsReadCount() {
           return sessionsGetCount;
