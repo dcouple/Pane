@@ -19,7 +19,7 @@ import { cn } from '../utils/cn';
 import type { Session, GitStatus } from '../types/session';
 import type { Project } from '../types/project';
 import { usePanelStore } from '../stores/panelStore';
-import { OrchestrationSessionNav, OrchestrationSessionShortcut } from './OrchestrationSessionNav';
+import { OrchestrationSessionNav } from './OrchestrationSessionNav';
 import {
   isArchivedOrchestrationSession,
   useOrchestrationSessionStore,
@@ -371,9 +371,7 @@ export function ProjectSessionList({
             <span>Pane Chat</span>
             <AgentStatusDot status={paneChatStatus} size="sm" className="ml-auto" />
           </button>
-        ) : (
-          <OrchestrationSessionShortcut />
-        )}
+        ) : null}
 
         <button
           type="button"

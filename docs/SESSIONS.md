@@ -13,6 +13,10 @@ Sessions keep their own agent. A blank name receives a generated name such as
 renamed later from the optional read-only overview. Expand a Session to see
 its associated Panes and open any Pane in its existing sidebar view.
 
+The Sessions section below the divider can be collapsed from its header; the
+`+` remains available while it is collapsed. Sessions are opened from this
+section rather than from a duplicate top navigation shortcut.
+
 The Session owns discussion, read-only code exploration and investigation,
 clarification, and ticket creation or revision. After a ticket is ready and
 the user explicitly authorizes implementation, the Session delegates

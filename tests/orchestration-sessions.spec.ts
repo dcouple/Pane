@@ -163,7 +163,6 @@ async function installSessionsFixture(
     let overviewCalls = 0;
     let nextOrchestrationUpdateError: string | null = null;
     const viewRequests: Array<{ sessionId: string; agent: SessionRecord['agent']; panelId: string }> = [];
-    type ChangedDetail = { sessionId: string | undefined; kind: string; selectionChanged?: boolean };
 
     const find = (selector: Selector): SessionRecord => {
       const session = sessions.find(candidate =>
@@ -214,11 +213,7 @@ async function installSessionsFixture(
       started: false,
     });
     const changed = (kind = 'updated', selectionChanged = false) => {
-      const detail: ChangedDetail = {
-        sessionId: selectedSessionId,
-        kind,
-      };
-      if (selectionChanged) detail.selectionChanged = true;
+      const detail = { sessionId: selectedSessionId, kind, selectionChanged };
       return window.dispatchEvent(new CustomEvent('orchestration-sessions-changed', { detail }));
     };
 
@@ -394,8 +389,8 @@ test('Sessions create, rename, switch, and keep chat surfaces focused', async ({
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await dismissStartupDialogs(page);
 
-  await expect(page.getByTestId('sessions-nav')).toBeVisible({ timeout: 10_000 });
-  await page.getByTestId('sessions-nav').click();
+  await expect(page.getByTestId('sessions-section-header')).toBeVisible({ timeout: 10_000 });
+  await page.getByTestId('orchestration-session-roadmap').click();
   await expect(page.getByRole('heading', { name: 'Roadmap', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Show overview', exact: true })).toBeVisible();
   await expect(page.getByText('Roadmap context stays here.', { exact: true })).toHaveCount(0);
@@ -471,7 +466,6 @@ test('Session creation agent picker supports native radio keyboard semantics', a
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await dismissStartupDialogs(page);
 
-  await page.getByTestId('sessions-nav').click();
   await page.getByTestId('new-orchestration-session').click();
   const dialog = page.locator('form').filter({ has: page.getByRole('heading', { name: 'Create Session', exact: true }) });
   const radios = dialog.getByRole('radio');
@@ -500,7 +494,6 @@ test('Session creation hides unsupported Cursor on Windows', async ({ page }) =>
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await dismissStartupDialogs(page);
 
-  await page.getByTestId('sessions-nav').click();
   await page.getByTestId('new-orchestration-session').click();
   const dialog = page.locator('form').filter({ has: page.getByRole('heading', { name: 'Create Session', exact: true }) });
   await expect(dialog.getByRole('radio')).toHaveCount(2);
@@ -520,7 +513,6 @@ test('Session metadata refresh stays quiet and cannot steal a later selection', 
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await dismissStartupDialogs(page);
 
-  await page.getByTestId('sessions-nav').click();
   await expect(page.getByRole('heading', { name: 'Alpha', exact: true })).toBeVisible({ timeout: 10_000 });
   const sessionsHeader = page.getByTestId('sessions-section-header');
   const firstSessionRow = page.getByTestId('orchestration-session-alpha');
@@ -587,7 +579,6 @@ test('Session view follows an external agent switch without selecting again or r
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await dismissStartupDialogs(page);
 
-  await page.getByTestId('sessions-nav').click();
   await expect(page.getByRole('heading', { name: 'Alpha', exact: true })).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId('pane-chat-agent-badge')).toHaveText('Claude');
   const initialViewRequests = await page.evaluate(() => {
@@ -708,8 +699,19 @@ test('Sessions group live managed Panes while preserving the focused Pane rows',
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await dismissStartupDialogs(page);
 
-  await expect(page.getByTestId('sessions-nav')).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByTestId('sessions-section-header')).toBeVisible({ timeout: 10_000 });
   await expect(page.getByTestId('usage-nav')).toBeVisible();
+  const sessionsToggle = page.getByTestId('sessions-section-header').getByRole('button', { name: 'Sessions', exact: true });
+  await expect(sessionsToggle).toHaveAttribute('aria-expanded', 'true');
+  await sessionsToggle.click();
+  await expect(sessionsToggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(page.getByTestId('orchestration-session-evolution')).toBeHidden();
+  await page.getByTestId('new-orchestration-session').click();
+  const collapsedCreateDialog = page.locator('form').filter({ has: page.getByRole('heading', { name: 'Create Session', exact: true }) });
+  await expect(collapsedCreateDialog.getByRole('heading', { name: 'Create Session', exact: true })).toBeVisible();
+  await collapsedCreateDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await sessionsToggle.click();
+  await expect(sessionsToggle).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByTestId('orchestration-session-evolution')).toContainText('Pane evolution');
   await expect(page.getByTestId('orchestration-session-evolution')).toContainText('1');
   await expect(page.getByTestId('orchestration-session-doozy')).toContainText('Doozy fixes');
@@ -750,7 +752,7 @@ test('Sessions group live managed Panes while preserving the focused Pane rows',
   await expect(page.getByRole('heading', { name: 'Doozy fixes', exact: true })).toBeVisible();
   await doozyRow.click();
   await page.getByRole('button', { name: 'Pane/managed pane sidebar', exact: true }).click();
-  await page.getByTestId('sessions-nav').click();
+  await doozyRow.click();
   await expect(page.getByRole('heading', { name: 'Doozy fixes', exact: true })).toBeVisible();
 
   await page.evaluate(async () => {
@@ -779,7 +781,6 @@ test('Session rows archive and restore without losing selection or associated Pa
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await dismissStartupDialogs(page);
 
-  await page.getByTestId('sessions-nav').click();
   await expect(page.getByRole('heading', { name: 'Alpha', exact: true })).toBeVisible({ timeout: 10_000 });
   await expect(page.getByRole('button', { name: 'Associated Alpha Pane', exact: true })).toBeVisible();
 
@@ -826,7 +827,6 @@ test('Archiving a Session during a delayed chat load cannot reinstall its view',
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await dismissStartupDialogs(page);
 
-  await page.getByTestId('sessions-nav').click();
   await expect(page.getByRole('heading', { name: 'Alpha', exact: true })).toBeVisible({ timeout: 10_000 });
   const initialViewRequestCount = await page.evaluate(() => {
     // SAFETY: installSessionsFixture adds this control before the app loads.
@@ -892,7 +892,6 @@ test('Session overview refreshes for associated Pane activity without reacting t
   await page.goto('/', { waitUntil: 'domcontentloaded', timeout: 30_000 });
   await dismissStartupDialogs(page);
 
-  await page.getByTestId('sessions-nav').click();
   await expect(page.getByRole('heading', { name: 'Tracked Session', exact: true })).toBeVisible({ timeout: 10_000 });
   await page.getByRole('button', { name: 'Show overview', exact: true }).click();
   const overview = page.getByRole('complementary', { name: 'Session overview', exact: true });

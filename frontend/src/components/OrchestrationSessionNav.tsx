@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
-import { Archive, MessageSquare, Plus, RefreshCw, Terminal } from 'lucide-react';
+import { Archive, ChevronDown, ChevronRight, MessageSquare, Plus, RefreshCw, Terminal } from 'lucide-react';
 import { useNavigationStore } from '../stores/navigationStore';
 import { useSessionStore } from '../stores/sessionStore';
-import { usePanelStore } from '../stores/panelStore';
 import { useConfigStore } from '../stores/configStore';
 import {
   isArchivedOrchestrationSession,
@@ -17,9 +16,7 @@ import { Modal, ModalBody, ModalFooter, ModalHeader } from './ui/Modal';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { Tooltip } from './ui/Tooltip';
-import { AgentStatusDot } from './ui/AgentStatusDot';
 import { PopoverButton, TerminalPopover } from './terminal/TerminalPopover';
-import { rollupAgentDisplayStatus, rollupSessionAgentState, toAgentDisplayStatus } from '../utils/agentStatus';
 import { visibleAgentPresets } from '../utils/agentPresets';
 import { cn } from '../utils/cn';
 
@@ -74,49 +71,6 @@ function nextSessionName(sessions: readonly OrchestrationSessionRecord[]): strin
   return `New chat ${suffix}`;
 }
 
-function useAggregateSessionStatus(sessions: OrchestrationSessionRecord[]) {
-  return usePanelStore(state => rollupAgentDisplayStatus(
-    sessions.filter(session => !isArchivedOrchestrationSession(session)).map(session => {
-      if (session.blockers.length > 0) return 'blocked';
-      return toAgentDisplayStatus(
-        rollupSessionAgentState(state.agentStatus, state.agentStatusSession, session.internalSessionId),
-        Boolean(state.unviewedCompletedActivity[session.internalSessionId]),
-      );
-    }),
-  ));
-}
-
-/** Top-level shortcut that keeps the expanded sidebar's navigation compact. */
-export function OrchestrationSessionShortcut() {
-  const sessions = useOrchestrationSessionStore(state => state.sessions);
-  const availability = useOrchestrationSessionStore(state => state.availability);
-  const aggregateStatus = useAggregateSessionStatus(sessions);
-  const navigateToPaneChat = useNavigationStore(state => state.navigateToPaneChat);
-  const activeView = useNavigationStore(state => state.activeView);
-  const setActiveSession = useSessionStore(state => state.setActiveSession);
-
-  if (!availabilityIsVisible(availability)) return null;
-
-  return (
-    <button
-      type="button"
-      data-testid="sessions-nav"
-      onClick={() => {
-        setActiveSession(null);
-        navigateToPaneChat();
-      }}
-      className={cn(
-        'flex w-full items-center gap-2 px-4 py-2 text-left text-sm transition-colors hover:bg-surface-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-inset focus:ring-interactive',
-        activeView === 'pane-chat' ? 'bg-surface-hover text-text-primary' : 'text-text-secondary',
-      )}
-    >
-      <MessageSquare className="h-4 w-4" />
-      <span>Sessions</span>
-      <AgentStatusDot status={aggregateStatus} size="sm" className="ml-auto" />
-    </button>
-  );
-}
-
 export function OrchestrationSessionNav({ compact = false, availablePaneIds, renderPane }: OrchestrationSessionNavProps) {
   const sessions = useOrchestrationSessionStore(state => state.sessions);
   const activeSessions = useMemo(
@@ -136,6 +90,7 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
   const setActiveSession = useSessionStore(state => state.setActiveSession);
   const [showCreate, setShowCreate] = useState(false);
   const [collapsedSessionIds, setCollapsedSessionIds] = useState<Set<string>>(new Set());
+  const [sectionExpanded, setSectionExpanded] = useState(true);
   const [sessionMenu, setSessionMenu] = useState<SessionContextMenuState | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -223,26 +178,6 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
   if (compact) {
     return (
       <div role="group" aria-label="Sessions" className="flex w-full shrink-0 flex-col items-center gap-0.5">
-        <Tooltip content="Sessions" side="right">
-          <button
-            type="button"
-            data-testid="compact-sessions"
-            data-compact-rail-item
-            aria-label="Sessions"
-            onClick={() => {
-              setActiveSession(null);
-              navigateToPaneChat();
-            }}
-            className={cn(
-              'relative flex h-9 min-h-9 w-9 min-w-9 shrink-0 items-center justify-center rounded transition-colors focus:outline-none focus:ring-2 focus:ring-interactive',
-              'text-text-tertiary hover:bg-surface-hover hover:text-text-primary',
-              activeView === 'pane-chat' && 'bg-surface-selected text-text-primary',
-            )}
-          >
-            <MessageSquare className="h-4 w-4" />
-            {availability === 'loading' && <RefreshCw className="absolute right-0 top-0 h-2.5 w-2.5 animate-spin" />}
-          </button>
-        </Tooltip>
         <Tooltip content="New Session" side="right">
           <button
             type="button"
@@ -303,28 +238,47 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
   return (
     <>
       <div className="mt-1" role="group" aria-label="Sessions">
-        <div data-testid="sessions-section-header" className="flex items-center justify-between gap-2 pl-3 pr-2 py-0.5">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <span className="truncate text-[11px] font-semibold uppercase tracking-wide leading-4 text-text-tertiary">Sessions</span>
-            <span
-              className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center"
-              role={availability === 'loading' ? 'status' : undefined}
-              aria-label={availability === 'loading' ? 'Loading Sessions' : undefined}
-            >
-              {availability === 'loading' && <RefreshCw aria-hidden="true" className="h-3 w-3 animate-spin text-text-muted" />}
+        <div data-testid="sessions-section-header" className="group/section flex items-center justify-between gap-2 pl-3.5 pr-2 py-0.5">
+          <button
+            type="button"
+            aria-expanded={sectionExpanded}
+            aria-controls="orchestration-sessions-list"
+            onClick={() => setSectionExpanded(current => !current)}
+            className="min-w-0 flex-1 flex items-center justify-between gap-2 py-1 text-left text-[11px] font-semibold uppercase tracking-wide leading-4 text-text-tertiary transition-colors hover:text-text-primary focus-visible:text-text-primary"
+          >
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate">Sessions</span>
+              <span
+                className="inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center"
+                role={availability === 'loading' ? 'status' : undefined}
+                aria-label={availability === 'loading' ? 'Loading Sessions' : undefined}
+              >
+                {availability === 'loading' && <RefreshCw aria-hidden="true" className="h-3 w-3 animate-spin text-text-muted" />}
+              </span>
             </span>
-          </div>
+            <span className="flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center opacity-0 transition-opacity group-hover/section:opacity-100 group-focus-visible/section:opacity-100">
+              {sectionExpanded ? (
+                <ChevronDown className="h-3.5 w-3.5 text-current" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5 text-current" />
+              )}
+            </span>
+          </button>
           <button
             type="button"
             data-testid="new-orchestration-session"
             aria-label="New Session"
             title="New Session"
-            onClick={() => setShowCreate(true)}
+            onClick={event => {
+              event.stopPropagation();
+              setShowCreate(true);
+            }}
             className="inline-flex h-6 w-6 flex-shrink-0 items-center justify-center rounded text-text-tertiary hover:bg-surface-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-interactive"
           >
             <Plus className="h-3.5 w-3.5" />
           </button>
         </div>
+        <div id="orchestration-sessions-list" hidden={!sectionExpanded}>
         {error && (
           <div className="mx-3 mb-1 rounded border border-status-error/40 bg-status-error/10 px-2 py-1.5 text-[11px] text-status-error" role="alert">
             <p>{error}</p>
@@ -365,7 +319,7 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
                   aria-expanded={paneRows.length > 0 ? expanded : undefined}
                   aria-controls={paneRows.length > 0 ? `orchestration-session-panes-${session.id}` : undefined}
                   onClick={() => {
-                    toggleSessionExpanded(session.id);
+                    if (paneRows.length > 0) toggleSessionExpanded(session.id);
                     void openSession(session.id);
                   }}
                   onContextMenu={event => handleSessionContextMenu(event, session)}
@@ -388,6 +342,7 @@ export function OrchestrationSessionNav({ compact = false, availablePaneIds, ren
             </div>
           );
         })}
+        </div>
       </div>
       <SessionContextMenu menu={sessionMenu} onClose={() => setSessionMenu(null)} onArchive={() => void archiveSession()} />
       <CreateOrchestrationSessionDialog isOpen={showCreate} onClose={() => setShowCreate(false)} onCreate={createSession} />
