@@ -107,24 +107,51 @@ const FALLBACK_RAW_FILES = [
 
 const REQUIRED_FALLBACK_RAW_FILE_SET = new Set<string>(REQUIRED_FALLBACK_RAW_FILES);
 
-const UNATTENDED_RESILIENCE_QUESTION =
-  'Enable unattended resilience for this session? (keeps the Mac awake with caffeinate, '
-  + 'auto-resumes panes whose turn died from a sleep/network API error, re-arms the watcher). Default: yes.';
+const SESSION_STARTUP_GUIDANCE = `## Session startup
 
-const UNATTENDED_RESILIENCE_PROMPT = `Ask the user once per session (this text is in both the guide and
-the skill; one ask covers both):
-"${UNATTENDED_RESILIENCE_QUESTION}"
-The default is yes: do not wait for an answer. If the user sends any
-other prompt instead of answering, treat that as yes and say so in one
-line. An explicit "no", at any point, disables it for the rest of the
-session (kill caffeinate if it is running).`;
+Start or resume each Session quietly. Perform routine setup and persisted-state
+refresh internally, then keep the first user-facing response to one or two
+short, friendly sentences:
+
+- For a new Session, say: "Ready when you are. What would you like to work on?"
+- If saved context has a next step, mention that next step briefly and invite
+  the user to continue.
+- If there is one human-needed blocker, mention only that blocker and what the
+  user needs to decide or do.
+
+Do not expose routine diagnostics, process IDs or PIDs, versions, revisions,
+power inventory, workspace-wide or unassociated-Pane inventory, or watcher
+narration. Do not describe an empty goal or no Panes as a problem. Show
+diagnostics only when the user asks or a relevant failure needs their
+attention.
+
+Do not offer unattended resilience during chat-only startup. Offer it only
+when the user requests unattended, overnight, or background work, or when
+delegated Pane work is about to begin and the choice affects how it runs. Ask
+one concise optional question with a concrete effect, for example: "Would you
+like unattended resilience for this delegated work? It keeps the Mac awake and
+can automatically resume a pane after a sleep or network interruption."
+
+Remember an explicit yes or no for the rest of the Session. Silence or an
+unrelated prompt is not consent. An explicit no at any point disables
+unattended resilience for the rest of the Session, including resilience that
+is already enabled; honor that revocation immediately: stop this Session's
+recorded \`caffeinate\` process if it is running and stop new auto-resume
+actions. Preserve an enabled choice across resumes and unrelated
+prompts until a new explicit no changes it. When enabled, follow the existing
+Unattended resilience section below.`;
 
 const UNATTENDED_RESILIENCE_SECTION = `## Unattended resilience (when enabled)
 
-Applies only when the startup question resolved to yes. When disabled,
-skip this whole section; the Liveness Contract in the pane-orchestrator
-skill stays as is. This section adds bookkeeping (a PID, a resume
-count) on top of the daemon's watcher; it is not a second watcher.
+Use this section only when unattended resilience is enabled by an explicit
+user choice. During chat-only startup, skip it. An explicit no at any point
+disables it for the rest of the Session, including when it is already enabled;
+honor that revocation immediately: stop this Session's recorded
+\`caffeinate\` process if it is running and stop new auto-resume actions.
+Silence or an unrelated prompt never counts as consent. Preserve enabled
+resilience across resumes and unrelated prompts until a new explicit no
+changes it. This section adds bookkeeping (a PID, a resume count) on top of
+the daemon's watcher; it is not a second watcher.
 
 Keep-awake (macOS only; skip on other platforms):
 
@@ -625,9 +652,9 @@ You are the user's Session orchestrator for this Pane workspace. The Session
 is the named, ongoing conversation where intent lives; associated Panes and
 tabs are the focused work surfaces.
 
-## Initialize
+## Initialize quietly
 
-Do these before anything else:
+Do these before anything else, but keep routine setup and its output internal:
 
 1. Runtime context: \`${runtimeContext}\` (authoritative for this Pane install)
 2. Pane Chat orchestrator skill: \`${paneOrchestratorSkill}\`
@@ -637,13 +664,11 @@ Do these before anything else:
    requirements apply only after implementation is authorized)
 6. Work-question guide: \`${workQuestions}\`
 7. Run the doctor command from the runtime context
-8. Arm liveness with the two commands in the pane-orchestrator skill's
-   Liveness Contract (\`runpane watch --self-test\`, then the flagged
-   follow line; never the bare \`--follow\`)
+8. If the Session has associated Panes, arm liveness with the two commands in
+   the pane-orchestrator skill's Liveness Contract (\`runpane watch --self-test\`,
+   then the flagged follow line; never the bare \`--follow\`)
 
-Then, before dispatching anything:
-
-${UNATTENDED_RESILIENCE_PROMPT}
+${SESSION_STARTUP_GUIDANCE}
 
 ## Resume and refresh persisted Session context
 
@@ -806,12 +831,13 @@ Read all of these in parallel:
 - Delegated implementation skill: \`${codexAstraTicket}\`
 - Work-question guide: \`${workQuestions}\`
 
-Then in parallel: run the doctor command from the runtime context,
-arm liveness (\`runpane watch --self-test\`, then the flagged follow line
-from the Liveness Contract below; never the bare \`--follow\`), and sweep
-active panes through RunPane.
+Then as quiet setup: run the doctor command from the runtime context and arm
+liveness (\`runpane watch --self-test\`, then the flagged follow line from the
+Liveness Contract below; never the bare \`--follow\`) when the Session has
+associated Panes. Inspect only Session-associated Panes when delegated work
+requires it; do not perform a workspace-wide or unassociated-Pane inventory.
 
-${UNATTENDED_RESILIENCE_PROMPT}
+${SESSION_STARTUP_GUIDANCE}
 
 ## Resume and refresh persisted Session context
 

@@ -416,7 +416,7 @@ process.stdout.write(JSON.stringify(payload) + '\\n');
     expect(canonicalSkill).not.toContain('fresh-eyes');
   });
 
-  it('asks the unattended resilience question and specifies the mode in every emitted variant', async () => {
+  it('emits quiet friendly startup guidance and defers unattended resilience', async () => {
     const manager = new SkillCacheManager();
 
     await manager.ensurePaneChatGuide();
@@ -427,12 +427,25 @@ process.stdout.write(JSON.stringify(payload) + '\\n');
     const claudeSkill = await fs.readFile(manager.claudePaneOrchestratorSkillPath, 'utf8');
     const cursorRule = await fs.readFile(manager.cursorPaneOrchestratorRulePath, 'utf8');
 
-    for (const rawVariant of [guide, canonicalSkill, codexSkill, claudeSkill, cursorRule]) {
+    const variants = [guide, canonicalSkill, codexSkill, claudeSkill, cursorRule];
+    for (const rawVariant of variants) {
       const variant = rawVariant.replace(/\s+/g, ' ');
-      expect(variant).toContain('Enable unattended resilience for this session?');
-      expect(variant).toContain('Default: yes.');
-      expect(variant).toContain('treat that as yes and say so in one line');
-      expect(variant).toContain('An explicit "no", at any point, disables it for the rest of the session');
+      expect(variant).toContain('## Session startup');
+      expect(variant).toContain('Ready when you are. What would you like to work on?');
+      expect(variant).toContain('saved context has a next step');
+      expect(variant).toContain('human-needed blocker');
+      expect(variant).toContain('process IDs or PIDs');
+      expect(variant).toContain('workspace-wide or unassociated-Pane inventory');
+      expect(variant).toContain('Show diagnostics only when the user asks or a relevant failure');
+      expect(variant).toContain('Do not offer unattended resilience during chat-only startup');
+      expect(variant).toContain('delegated Pane work is about to begin');
+      expect(variant).toContain('one concise optional question with a concrete effect');
+      expect(variant).toContain('Remember an explicit yes or no for the rest of the Session');
+      expect(variant).toContain('Silence or an unrelated prompt is not consent');
+      expect(variant).toContain('resilience that is already enabled');
+      expect(variant).toContain("stop this Session's recorded `caffeinate` process if it is running");
+      expect(variant).not.toContain('Enable unattended resilience for this session?');
+      expect(variant).not.toContain('Default: yes.');
       expect(variant).toContain('## Unattended resilience (when enabled)');
       expect(variant).toContain('caffeinate -dims');
       expect(variant).toContain('sudo pmset -c disablesleep 1');
@@ -473,14 +486,16 @@ process.stdout.write(JSON.stringify(payload) + '\\n');
       expect(variant).toContain('## Hard stops');
     }
 
-    // The question is asked once, after doctor, and the section stays clear of the hard stops.
-    expect(guide.indexOf('Run the doctor command')).toBeLessThan(guide.indexOf('Enable unattended resilience'));
-    expect(guide.indexOf('runpane watch --self-test')).toBeLessThan(guide.indexOf('Enable unattended resilience'));
-    expect(guide.indexOf('## Unattended resilience (when enabled)')).toBeLessThan(guide.indexOf('## Hard stops'));
-    expect(canonicalSkill.indexOf('runpane watch --self-test')).toBeLessThan(canonicalSkill.indexOf('Enable unattended resilience'));
-    expect(canonicalSkill.indexOf('## Liveness Contract')).toBeLessThan(canonicalSkill.indexOf('## Unattended resilience (when enabled)'));
-    expect(canonicalSkill.indexOf('## Unattended resilience (when enabled)')).toBeLessThan(canonicalSkill.indexOf('## Hard stops'));
-    expect(canonicalSkill.split('Enable unattended resilience for this session?')).toHaveLength(2);
+    // The shared contract is present in every generated form and the startup
+    // question cannot be restored by a stale generated file.
+    expect(guide).toContain('## Initialize quietly');
+    expect(guide).toContain('If the Session has associated Panes, arm liveness');
+    expect(canonicalSkill).toContain('Then as quiet setup:');
+    expect(canonicalSkill.replace(/\s+/g, ' ')).toContain('when the Session has associated Panes');
+    expect(canonicalSkill).toContain('## Liveness Contract');
+    for (const variant of variants) {
+      expect(variant).not.toContain('startup question resolved to yes');
+    }
   });
 
   it('rewrites stale generated guide and skill files on upgrade', async () => {
@@ -503,6 +518,7 @@ process.stdout.write(JSON.stringify(payload) + '\\n');
       const contents = await fs.readFile(target, 'utf8');
       expect(contents).not.toContain('stale pre-upgrade text');
       expect(contents).toContain('## Unattended resilience (when enabled)');
+      expect(contents).not.toContain('Enable unattended resilience for this session?');
     }
   });
 

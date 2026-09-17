@@ -22,6 +22,23 @@ implementation, pull request, review, QA, and CI requirements. The Session
 keeps its selected agent, profile, and tool configuration; selecting a Session
 agent does not replace the delegated workflow's model requirements.
 
+## Session startup
+
+Session setup is quiet. After routine context and liveness checks, a new
+Session greets the user with a short invitation such as `Ready when you are.
+What would you like to work on?`; a resumed Session briefly surfaces its saved
+next step. Routine diagnostics, machine details, watcher output, and
+workspace-wide Pane inventory stay internal unless the user asks or a relevant
+failure needs attention. If one human action blocks progress, the Session
+surfaces that single action clearly.
+
+Unattended resilience is offered only when the user requests unattended work
+or delegated work makes the choice relevant. The offer states its effect,
+including keep-awake and automatic resume behavior. An explicit yes or no is
+remembered for the Session; silence and unrelated prompts are not consent. A
+new explicit no revokes resilience, while an enabled choice persists across
+ordinary resumes and unrelated prompts.
+
 Sessions do not create worktrees and do not edit project implementation files.
 An association identifies work that a Session coordinates; it does not grant
 implementation authority by itself. Detach a Pane before assigning it to a
