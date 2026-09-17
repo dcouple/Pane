@@ -141,6 +141,62 @@ actions. Preserve an enabled choice across resumes and unrelated
 prompts until a new explicit no changes it. When enabled, follow the existing
 Unattended resilience section below.`;
 
+const SESSION_PANE_ASSOCIATION_GUIDANCE = `## Associate delegated Panes with this Session
+
+Session management is a Pane-level relationship. Tabs inside a Pane inherit
+that relationship and share its worktree. Read this Session's own stable
+identity from \`PANE_ORCHESTRATION_SESSION_ID\`; never infer it from a panel,
+terminal, or conversation, and do not add or rely on a Boolean worker or
+managed flag.
+
+Before delegating work to an existing Pane:
+
+1. Resolve the target Pane and read this Session's current overview.
+2. If the target is already associated with this Session, reuse it. Do not
+   associate it again or create a duplicate Pane.
+3. If the target belongs to another Session, stop and report the conflict. Do
+   not detach or reassign it and do not create a duplicate Pane to work around
+   the conflict.
+4. If it is unassociated, use the supported command shown by local
+   \`runpane agent-context --command 'sessions associate' --json\`:
+
+\`\`\`text
+runpane sessions associate --session <id|name> --pane <pane-id> [--json] [--pane-dir <path>]
+\`\`\`
+
+For this Session, use:
+
+\`\`\`text
+runpane sessions associate --session "$PANE_ORCHESTRATION_SESSION_ID" --pane <pane-id> --json --pane-dir <path>
+\`\`\`
+
+Use the Pane data directory from the runtime context. Then verify
+with \`runpane sessions overview --session "$PANE_ORCHESTRATION_SESSION_ID" --json --pane-dir <path>\`
+that the target Pane appears under this Session exactly once before sending
+delegated work.
+
+When creating a new Pane for delegated work, prefer provisioning it without an
+implementation prompt, then associate and verify it before submitting that
+prompt. A trusted caller may provide automatic association, but verify that
+result before work starts. Otherwise capture the returned Pane ID and run the
+same association command immediately; do not let a create-time prompt start
+work before the association is established. Keep the association through
+working, idle, and completion states; completion or inactivity does not detach
+a Pane. Do not detach on completion; archive behavior remains a separate #654
+follow-up and does not use an agent shortcut that leaves an active Pane
+untracked.
+
+Before any association mutation, verify that the selected wrapper supports
+Sessions with \`runpane agent-context --command 'sessions associate' --json\`.
+If it reports an unknown command or omits the association tool, treat that
+wrapper as incompatible (an older global CLI may still reach the daemon).
+Use an app-compatible dev wrapper identified by the exact runtime context or
+Pane checkout only after verifying its version/doctor result and repeating the
+command-detail check. Do not use a global or \`npx\` wrapper merely because it
+runs. Do not silently proceed without an association or create a duplicate
+Pane; if no verified app-compatible wrapper is available, report one concise
+blocker and wait.`;
+
 const UNATTENDED_RESILIENCE_SECTION = `## Unattended resilience (when enabled)
 
 Use this section only when unattended resilience is enabled by an explicit
@@ -670,6 +726,8 @@ Do these before anything else, but keep routine setup and its output internal:
 
 ${SESSION_STARTUP_GUIDANCE}
 
+${SESSION_PANE_ASSOCIATION_GUIDANCE}
+
 ## Resume and refresh persisted Session context
 
 Read \`PANE_ORCHESTRATION_SESSION_ID\` from the current environment whenever
@@ -838,6 +896,8 @@ associated Panes. Inspect only Session-associated Panes when delegated work
 requires it; do not perform a workspace-wide or unassociated-Pane inventory.
 
 ${SESSION_STARTUP_GUIDANCE}
+
+${SESSION_PANE_ASSOCIATION_GUIDANCE}
 
 ## Resume and refresh persisted Session context
 
@@ -1291,7 +1351,20 @@ if __name__ == "__main__":
     const legacyPaneDirEnv = process.env.FOOZOL_DIR || '';
     const wslDistro = process.env.WSL_DISTRO_NAME || '';
     const doctorCommand = `runpane doctor --json --pane-dir ${quoteForDisplayedShellArg(appDirectory)}`;
+    const devRunpaneWrapper = await this.findDevelopmentRunpaneWrapper();
     const powerShellPolicy = this.buildPowerShellPolicy(isWsl);
+    const devWrapperGuidance = devRunpaneWrapper
+      ? [
+          '',
+          '## App-compatible development wrapper (candidate)',
+          `- Repository-local wrapper: ${markdownCode(`node ${quoteForDisplayedShellArg(devRunpaneWrapper)}`)}`,
+          '- Verify this candidate before use with the command-detail check below',
+          '  and a doctor call pointed at this same Pane data directory. Use it',
+          '  only if it exposes `sessions associate` and reaches this app/daemon.',
+          `- Command-detail check: ${markdownCode(`node ${quoteForDisplayedShellArg(devRunpaneWrapper)} agent-context --command "sessions associate" --json`)}`,
+          `- Same-instance doctor check: ${markdownCode(`node ${quoteForDisplayedShellArg(devRunpaneWrapper)} doctor --json --pane-dir ${quoteForDisplayedShellArg(appDirectory)}`)}`,
+        ]
+      : [];
 
     return [
       '# Pane Chat Runtime Context',
@@ -1329,6 +1402,7 @@ if __name__ == "__main__":
       '- If a one-shot wrapper works but the persistent `runpane` command does',
       '  not, continue with the working one-shot form or fix PATH before',
       '  orchestration. Do not switch to a different Pane install.',
+      ...devWrapperGuidance,
       powerShellPolicy,
       '',
       '## Mismatch Guardrail',
@@ -1338,6 +1412,20 @@ if __name__ == "__main__":
       'commands pointed at a different Pane instance.',
       '',
     ].join('\n');
+  }
+
+  private async findDevelopmentRunpaneWrapper(): Promise<string | undefined> {
+    const candidates = [
+      path.resolve(process.cwd(), 'packages', 'runpane', 'dist', 'cli.js'),
+      path.resolve(__dirname, '../../../packages/runpane/dist/cli.js'),
+      path.resolve(__dirname, '../../../../../packages/runpane/dist/cli.js'),
+    ];
+
+    for (const candidate of candidates) {
+      if (await exists(candidate)) return candidate;
+    }
+
+    return undefined;
   }
 
   private async detectRunningInWSL(): Promise<boolean> {

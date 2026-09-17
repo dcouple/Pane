@@ -200,6 +200,11 @@ describe('SkillCacheManager Pane Chat guide', () => {
     expect(runtimeContext).toContain('If `runpane` is missing in this shell');
     expect(runtimeContext).toContain('npx --yes runpane@latest doctor --json --pane-dir');
     expect(runtimeContext).toContain('Do not switch to a different Pane install.');
+    expect(runtimeContext).toContain('## App-compatible development wrapper (candidate)');
+    expect(runtimeContext).toContain('packages/runpane/dist/cli.js');
+    expect(runtimeContext).toContain('agent-context --command "sessions associate" --json');
+    expect(runtimeContext).toContain('doctor --json --pane-dir');
+    expect(runtimeContext).not.toContain('PANE_DIR=');
   });
 
   it('writes a launcher for the one canonical daemon-backed watcher', async () => {
@@ -519,6 +524,47 @@ process.stdout.write(JSON.stringify(payload) + '\\n');
       expect(contents).not.toContain('stale pre-upgrade text');
       expect(contents).toContain('## Unattended resilience (when enabled)');
       expect(contents).not.toContain('Enable unattended resilience for this session?');
+    }
+  });
+
+  it('teaches Pane-level Session association before delegation in every generated variant', async () => {
+    const manager = new SkillCacheManager();
+
+    await manager.ensurePaneChatGuide();
+
+    const variants = await Promise.all([
+      fs.readFile(manager.paneChatGuidePath, 'utf8'),
+      fs.readFile(manager.paneChatOrchestratorSkillPath, 'utf8'),
+      fs.readFile(manager.codexPaneOrchestratorSkillPath, 'utf8'),
+      fs.readFile(manager.claudePaneOrchestratorSkillPath, 'utf8'),
+      fs.readFile(manager.cursorPaneOrchestratorRulePath, 'utf8'),
+    ]);
+
+    for (const rawVariant of variants) {
+      const variant = rawVariant.replace(/\s+/g, ' ');
+      expect(variant).toContain('## Associate delegated Panes with this Session');
+      expect(variant).toContain('PANE_ORCHESTRATION_SESSION_ID');
+      expect(variant).toContain('do not add or rely on a Boolean worker or managed flag');
+      expect(variant).toContain(
+        'runpane agent-context --command \'sessions associate\' --json',
+      );
+      expect(variant).toContain(
+        'runpane sessions associate --session <id|name> --pane <pane-id> [--json] [--pane-dir <path>]',
+      );
+      expect(variant).toContain(
+        'runpane sessions associate --session "$PANE_ORCHESTRATION_SESSION_ID" --pane <pane-id> --json --pane-dir <path>',
+      );
+      expect(variant).toContain(
+        'runpane sessions overview --session "$PANE_ORCHESTRATION_SESSION_ID" --json --pane-dir <path>',
+      );
+      expect(variant).toContain('If the target belongs to another Session, stop and report the conflict');
+      expect(variant).toContain('associate it again or create a duplicate Pane');
+      expect(variant).toContain('Otherwise capture the returned Pane ID and run the same association command immediately');
+      expect(variant).toContain('Keep the association through working, idle, and completion states');
+      expect(variant).toContain('archive behavior remains a separate #654 follow-up');
+      expect(variant).toContain('unknown command');
+      expect(variant).toContain('app-compatible dev wrapper');
+      expect(variant).toContain('Do not silently proceed without an association or create a duplicate Pane');
     }
   });
 

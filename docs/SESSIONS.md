@@ -39,6 +39,31 @@ remembered for the Session; silence and unrelated prompts are not consent. A
 new explicit no revokes resilience, while an enabled choice persists across
 ordinary resumes and unrelated prompts.
 
+## Pane association before delegation
+
+Management is a Pane-level relationship; tabs inherit the relationship and
+share the Pane's worktree. The orchestrator reads its own stable identity from
+`PANE_ORCHESTRATION_SESSION_ID` and associates a Pane immediately after
+creating it, or before delegating to an existing Pane. The supported command
+is:
+
+```text
+runpane sessions associate --session <id|name> --pane <pane-id> [--json] [--pane-dir <path>]
+```
+
+Verify the result with `runpane sessions overview` and reuse an existing
+association. A Pane already managed by another Session is a conflict: do not
+detach, reassign, or create a duplicate Pane. Prefer creating a Pane without
+an implementation prompt, associating and verifying it, then submitting the
+prompt. Keep a Pane attached through idle and completion; do not detach on
+completion. Archive behavior remains a separate #654 follow-up.
+
+Before mutating, use `runpane agent-context --command 'sessions associate'
+--json` to confirm the wrapper supports the command. If an older global CLI
+does not, select and verify the app-compatible dev wrapper from the Pane
+runtime context before proceeding. Never silently continue without the
+association or substitute an unverified global/`npx` wrapper.
+
 Sessions do not create worktrees and do not edit project implementation files.
 An association identifies work that a Session coordinates; it does not grant
 implementation authority by itself. Detach a Pane before assigning it to a
