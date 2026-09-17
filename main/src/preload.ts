@@ -166,6 +166,19 @@ let ptyHostPort: MessagePort | null = null;
 const ptyDataSubscribers = new Map<string, Set<PtyDataCallback>>();
 const ptyExitSubscribers = new Map<string, Set<PtyExitCallback>>();
 
+// A missing port is fatal for ptyHost-spawned panels: the renderer stops
+// reading the legacy `terminal:output` IPC once it has a `ptyId`, so bytes have
+// nowhere else to arrive from and the terminal renders its first frame and then
+// goes silent. Warn once rather than no-op quietly, which is what hid the
+// `did-finish-load` registration bug (the listener was armed after the awaited
+// load had already fired it, so `attachWindow` never ran).
+let warnedMissingPtyHostPort = false;
+function warnMissingPtyHostPort(context: string): void {
+  if (warnedMissingPtyHostPort) return;
+  warnedMissingPtyHostPort = true;
+  console.error(`[ptyHost] no renderer data port (${context}); PTY output cannot reach this window`);
+}
+
 ipcRenderer.on('ptyHost-port', (event) => {
   const [port] = event.ports;
   if (!port) {
@@ -1115,6 +1128,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // main-side via `PtyHostSupervisor.onRendererMessage` when they land.
   ptyHost: {
     onData: (ptyId: string, cb: PtyDataCallback): (() => void) => {
+      if (!ptyHostPort) warnMissingPtyHostPort(`onData ptyId=${ptyId}`);
       let set = ptyDataSubscribers.get(ptyId);
       if (!set) {
         set = new Set();
@@ -1147,11 +1161,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
       };
     },
     ack: (ptyId: string, bytes: number): void => {
-      if (!ptyHostPort) return;
+      if (!ptyHostPort) {
+        warnMissingPtyHostPort('ack');
+        return;
+      }
       ptyHostPort.postMessage({ type: 'ack', ptyId, bytes });
     },
     write: (ptyId: string, data: string): void => {
-      if (!ptyHostPort) return;
+      if (!ptyHostPort) {
+        warnMissingPtyHostPort('write');
+        return;
+      }
       ptyHostPort.postMessage({ type: 'write', ptyId, data });
     },
   },
