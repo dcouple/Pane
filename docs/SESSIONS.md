@@ -22,6 +22,24 @@ implementation, pull request, review, QA, and CI requirements. The Session
 keeps its selected agent, profile, and tool configuration; selecting a Session
 agent does not replace the delegated workflow's model requirements.
 
+## Session sidebar and archive
+
+Click a Session row to open its chat and expand or collapse its associated
+Panes. Child Pane rows are indented beyond the Session chat icon and keep the
+ordinary Pane actions.
+
+Right-click a Session to archive it. Archiving hides the chat from the active
+Sessions list while retaining its identity, conversation history, and Pane
+associations. Its Panes and worktrees remain accessible through repository
+navigation. Restore the Session from the sidebar’s Archived section. This is
+separate from archiving a project Pane and does not delete delegated work.
+
+The existing Session update contract accepts `archived: true` or
+`archived: false`. List results retain archived records; active navigation
+filters them. Archiving the selected Session chooses an available active
+Session or clears the selection if none remain. Restoring a Session does not
+replace an unrelated selection.
+
 ## Session startup
 
 Session setup is quiet. After routine context and liveness checks, a new
