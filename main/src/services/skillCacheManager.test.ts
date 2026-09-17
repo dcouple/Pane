@@ -192,10 +192,22 @@ describe('SkillCacheManager Pane Chat guide', () => {
 
   it('writes runtime context with same-runtime CLI recovery guidance', async () => {
     const manager = new SkillCacheManager();
+    if (!tempDir) throw new Error('expected test temp directory');
+    const wrapperRoot = path.join(tempDir, 'dev-wrapper-checkout');
+    await writeLocalRunpaneStub(wrapperRoot, 'process.exit(0);');
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(wrapperRoot);
 
-    await manager.ensurePaneChatGuide();
+    try {
+      await manager.ensurePaneChatGuide();
+    } finally {
+      cwdSpy.mockRestore();
+    }
 
     const runtimeContext = await fs.readFile(manager.paneChatRuntimeContextPath, 'utf8');
+    const normalizedRuntimeContext = normalizePathSeparators(runtimeContext);
+    expect(normalizedRuntimeContext).toContain(
+      `${normalizePathSeparators(wrapperRoot)}/packages/runpane/dist/cli.js`,
+    );
     expect(runtimeContext).toContain('First command to run: `runpane doctor --json --pane-dir');
     expect(runtimeContext).toContain('If `runpane` is missing in this shell');
     expect(runtimeContext).toContain('npx --yes runpane@latest doctor --json --pane-dir');
